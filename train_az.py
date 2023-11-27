@@ -29,7 +29,7 @@ class Config(BaseModel):
     train_iterations: int = 8
     train_batch_size: int = 8192
 
-    experience_buffer_size: int = 500_000
+    experience_buffer_size: int = 1_000_000
 
     mcts_simulations: int = 32
 
