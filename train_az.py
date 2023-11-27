@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+import pgx
 from pgx import State
 import chex
 from chex import PRNGKey
@@ -15,14 +16,13 @@ from type_aliases import Reward, Observation, Done
 import env_wrapper as env
 from az_network import NetworkVariables
 import az_agent
-import mcts_agent
 
 
 class Config(BaseModel):
     seed: int = 0
 
     self_play_iterations: int = 4
-    self_play_batch_size: int = 512
+    self_play_batch_size: int = 256
 
     train_iterations: int = 4
     train_batch_size: int = 8192
@@ -148,15 +148,22 @@ def make_train_step(opt: optax.GradientTransformation):
 
 
 @partial(jax.jit, static_argnames=('batch_size',))
-def evaluate_net_v_mcts(variables: NetworkVariables, rng: PRNGKey, batch_size: int):
+def evaluate_net_v_baseline(variables: NetworkVariables, rng: PRNGKey, batch_size: int):
+    baseline = pgx.make_baseline_model('othello_v0')
     def single_move(prev: tuple[State, Observation], rng: PRNGKey) -> tuple[tuple[State, Observation], Reward]:
         state, observation = prev
-        rng1, rng2 = jax.random.split(rng)
-        policy1 = az_agent.batched_compute_policy(variables, rng1, state, observation, config.mcts_simulations)
-        policy2 = mcts_agent.batched_compute_policy(rng2, state, config.mcts_simulations)
-        action = jnp.where(state.current_player == 0, policy1.action, policy2.action)
+        
+        policy1 = az_agent.batched_compute_policy(variables, rng, state, observation, config.mcts_simulations)
+        action1 = policy1.action_weights.argmax(axis=-1)
+        
+        logits2, _ = baseline(observation)
+        action2 = logits2.argmax(axis=-1)
+        
+        action = jnp.where(state.current_player == 0, action1, action2)
+        
         new_state, new_observation, new_reward, new_done = jax.vmap(env.step)(state, action)
         return (new_state, new_observation), new_state.rewards
+
     rng, subkey = jax.random.split(rng)
     state, observation = jax.vmap(env.reset)(jax.random.split(subkey, batch_size))
     first = state, observation
@@ -199,9 +206,9 @@ def run():
 
         print('Evaluating...')
         rng, subkey = jax.random.split(rng)
-        rewards = evaluate_net_v_mcts(variables, subkey, config.self_play_batch_size)
-        r_agent, r_mcts = rewards
-        print(f'Agent: {r_agent} MCTS: {r_mcts}')
+        rewards = evaluate_net_v_baseline(variables, subkey, config.self_play_batch_size)
+        r_agent, r_baseline = rewards
+        print(f'Agent: {r_agent} Baseline: {r_baseline}')
 
 
 if __name__ == '__main__':

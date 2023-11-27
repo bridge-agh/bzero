@@ -8,7 +8,7 @@ import mctx
 from functools import partial
 
 from type_aliases import Action, Observation
-from az_network import AlphaZeroNetwork, NetworkVariables, NetworkOutputs, ConnectFourActionHead
+from az_network import AlphaZeroNetwork, NetworkVariables, NetworkOutputs, DiscreteActionHead
 import env_wrapper as env
 
 
@@ -22,7 +22,7 @@ def act_randomly(rng: PRNGKey, state: State) -> Action:
 
 @hk.transform_with_state
 def forward(observation: Observation, is_training: bool) -> NetworkOutputs:
-    net = AlphaZeroNetwork(action_head=ConnectFourActionHead())
+    net = AlphaZeroNetwork(action_head=DiscreteActionHead(num_actions=env.num_actions))
     return net(observation.astype(jnp.float32), is_training=is_training)
 
 

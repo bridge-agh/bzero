@@ -48,10 +48,14 @@ class PolicyHead(hk.Module):
         return x
 
 
-class Go9x9ActionHead(hk.Module):
+class DiscreteActionHead(hk.Module):
+    def __init__(self, num_actions, name=None):
+        super().__init__(name=name)
+        self.num_actions = num_actions
+
     def __call__(self, x):
         x = hk.Flatten()(x)
-        x = hk.Linear(9 * 9 + 1)(x)
+        x = hk.Linear(self.num_actions)(x)
         return x
 
 

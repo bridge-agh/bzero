@@ -4,9 +4,9 @@ from chex import PRNGKey
 from type_aliases import Observation, Reward, Done, Action
 
 
-env = pgx.make("go_9x9")
+env = pgx.make("othello")
 num_actions = env.num_actions
-max_steps = env.max_termination_steps
+max_steps = 64
 
 
 def reset(rng: PRNGKey) -> tuple[State, Observation]:

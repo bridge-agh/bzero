@@ -19,10 +19,7 @@ def winning_action_mask(state: State) -> chex.Array:
 
 
 def lookahead_policy(state: State) -> chex.Array:
-    return sum((
-        state.legal_action_mask.astype(jnp.float32) * 100,
-        winning_action_mask(state).astype(jnp.float32) * 200,
-    ))
+    return state.legal_action_mask.astype(jnp.float32) * 100
 
 
 def rollout_value(rng: PRNGKey, state: State) -> Reward:
