@@ -11,6 +11,8 @@ from functools import partial
 from rich.progress import track
 from pydantic import BaseModel
 from omegaconf import OmegaConf
+import wandb
+import pickle
 
 from type_aliases import Reward, Observation, Done
 import env_wrapper as env
@@ -173,6 +175,8 @@ def evaluate_net_v_baseline(variables: NetworkVariables, rng: PRNGKey, batch_siz
 
 
 def run():
+    wandb.init(project="othello-zero", config=config.model_dump())
+
     rng = jax.random.PRNGKey(config.seed)
 
     rng, subkey = jax.random.split(rng)
@@ -188,27 +192,56 @@ def run():
 
     experience_buffer = []
 
-    while True:
-        rng, subkey = jax.random.split(rng)
-        examples = collect_self_play_data(variables, subkey, config.self_play_iterations, config.self_play_batch_size)
-        print(f'Collected {len(examples)} examples')
-        experience_buffer.extend(examples)
-        experience_buffer = experience_buffer[-config.experience_buffer_size:]
+    log = {
+        'iteration': 0,
+        'self_play/frames': 0,
+        'train/frames': 0,
+        'train/iteration': 0,
+    }
 
-        for epoch in track(range(config.train_iterations), description="Training"):
+    try:
+        while True:
             rng, subkey = jax.random.split(rng)
-            idx = jax.random.choice(subkey, len(experience_buffer), [config.train_batch_size], replace=False)
-            examples = [experience_buffer[i] for i in idx]
-            batch = jax.tree_util.tree_map(lambda *x: jnp.array(x), *examples)
+            examples = collect_self_play_data(variables, subkey, config.self_play_iterations, config.self_play_batch_size)
+            print(f'Collected {len(examples)} examples')
+            log['self_play/frames'] += len(examples)
+            
+            experience_buffer.extend(examples)
+            experience_buffer = experience_buffer[-config.experience_buffer_size:]
+            log.update({'experience_buffer_size': len(experience_buffer)})
 
+            for _ in track(range(config.train_iterations), description="Training"):
+                rng, subkey = jax.random.split(rng)
+                idx = jax.random.choice(subkey, len(experience_buffer), [config.train_batch_size], replace=False)
+                examples = [experience_buffer[i] for i in idx]
+                batch = jax.tree_util.tree_map(lambda *x: jnp.array(x), *examples)
+
+                rng, subkey = jax.random.split(rng)
+                variables, opt_state, loss = train_step(variables, subkey, opt_state, batch)
+
+                log['train/loss'] = loss
+                log['train/frames'] += len(examples)
+                log['train/iteration'] += 1
+
+                wandb.log(log)
+
+            print('Evaluating...')
             rng, subkey = jax.random.split(rng)
-            variables, opt_state, loss = train_step(variables, subkey, opt_state, batch)
+            rewards = evaluate_net_v_baseline(variables, subkey, config.self_play_batch_size)
+            r_agent, r_baseline = rewards
+            print(f'Agent: {r_agent} Baseline: {r_baseline}')
+            log['eval/agent_reward'] = r_agent
+            log['eval/baseline_reward'] = r_baseline
 
-        print('Evaluating...')
-        rng, subkey = jax.random.split(rng)
-        rewards = evaluate_net_v_baseline(variables, subkey, config.self_play_batch_size)
-        r_agent, r_baseline = rewards
-        print(f'Agent: {r_agent} Baseline: {r_baseline}')
+            log['iteration'] += 1
+
+            wandb.log(log)
+
+    except KeyboardInterrupt:
+        pass
+    
+    with open('model.pkl', 'wb') as f:
+        pickle.dump(variables, f)
 
 
 if __name__ == '__main__':
