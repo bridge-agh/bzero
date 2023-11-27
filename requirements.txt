@@ -1,0 +1,10 @@
+dm-haiku
+chex
+pgx
+pydantic
+omegaconf
+matplotlib
+tqdm
+mctx
+rich
+wandb
