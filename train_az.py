@@ -26,7 +26,7 @@ class Config(BaseModel):
     self_play_iterations: int = 4
     self_play_batch_size: int = 256
 
-    train_iterations: int = 4
+    train_iterations: int = 8
     train_batch_size: int = 8192
 
     experience_buffer_size: int = 500_000
@@ -154,15 +154,15 @@ def evaluate_net_v_baseline(variables: NetworkVariables, rng: PRNGKey, batch_siz
     baseline = pgx.make_baseline_model('othello_v0')
     def single_move(prev: tuple[State, Observation], rng: PRNGKey) -> tuple[tuple[State, Observation], Reward]:
         state, observation = prev
-        
+
         policy1 = az_agent.batched_compute_policy(variables, rng, state, observation, config.mcts_simulations)
         action1 = policy1.action_weights.argmax(axis=-1)
-        
+
         logits2, _ = baseline(observation)
         action2 = logits2.argmax(axis=-1)
-        
+
         action = jnp.where(state.current_player == 0, action1, action2)
-        
+
         new_state, new_observation, new_reward, new_done = jax.vmap(env.step)(state, action)
         return (new_state, new_observation), new_state.rewards
 
@@ -205,7 +205,7 @@ def run():
             examples = collect_self_play_data(variables, subkey, config.self_play_iterations, config.self_play_batch_size)
             print(f'Collected {len(examples)} examples')
             log['self_play/frames'] += len(examples)
-            
+
             experience_buffer.extend(examples)
             experience_buffer = experience_buffer[-config.experience_buffer_size:]
             log.update({'experience_buffer_size': len(experience_buffer)})
@@ -239,7 +239,7 @@ def run():
 
     except KeyboardInterrupt:
         pass
-    
+
     with open('model.pkl', 'wb') as f:
         pickle.dump(variables, f)
 
