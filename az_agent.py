@@ -71,14 +71,15 @@ def batched_recurrent_fn(variables: NetworkVariables, rng: PRNGKey, action: Acti
 
 def batched_compute_policy(variables: NetworkVariables, rng: PRNGKey, state: State, observation: Observation, num_simulations: int) -> mctx.PolicyOutput:
     policy_rng, root_rng = jax.random.split(rng, 2)
-    policy_output = mctx.muzero_policy(
+    policy_output = mctx.gumbel_muzero_policy(
         params=variables,
         rng_key=policy_rng,
         root=batched_root_fn(variables, root_rng, state, observation),
         recurrent_fn=batched_recurrent_fn,
         num_simulations=num_simulations,
         max_depth=env.max_steps,
-        qtransform=partial(mctx.qtransform_by_min_max, min_value=-1, max_value=1),
+        qtransform=mctx.qtransform_completed_by_mix_value,
         invalid_actions=1.0 - state.legal_action_mask.astype(jnp.float32),
+        gumbel_scale=1.0,
     )
     return policy_output
