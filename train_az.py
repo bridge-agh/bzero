@@ -23,10 +23,10 @@ import az_agent
 class Config(BaseModel):
     seed: int = 0
 
-    self_play_iterations: int = 1
+    self_play_iterations: int = 8
     self_play_batch_size: int = 256
 
-    train_iterations: int = 2
+    train_iterations: int = 16
     train_batch_size: int = 8192
 
     experience_buffer_size: int = 1_000_000
@@ -154,14 +154,17 @@ def evaluate_net_v_baseline(variables: NetworkVariables, rng: PRNGKey, batch_siz
     baseline = pgx.make_baseline_model('othello_v0')
     def single_move(prev: tuple[State, Observation], rng: PRNGKey) -> tuple[tuple[State, Observation], Reward]:
         state, observation = prev
+        rng0, rng1 = jax.random.split(rng)
 
-        policy1 = az_agent.batched_compute_policy(variables, rng, state, observation, config.mcts_simulations)
-        action1 = policy1.action_weights.argmax(axis=-1)
+        policy0 = az_agent.batched_compute_policy(variables, rng0, state, observation, config.mcts_simulations)
+        action0 = policy0.action
 
-        logits2, _ = baseline(observation)
-        action2 = logits2.argmax(axis=-1)
+        logits1, _ = baseline(observation)
+        action_mask = state.legal_action_mask
+        logits1_masked = jnp.where(action_mask, logits1, -1e9)
+        action1 = jax.random.categorical(rng1, logits1_masked)
 
-        action = jnp.where(state.current_player == 0, action1, action2)
+        action = jnp.where(state.current_player == 0, action0, action1)
 
         new_state, new_observation, new_reward, new_done = jax.vmap(env.step)(state, action)
         return (new_state, new_observation), new_state.rewards
