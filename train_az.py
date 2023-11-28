@@ -23,10 +23,10 @@ import az_agent
 class Config(BaseModel):
     seed: int = 0
 
-    self_play_iterations: int = 4
+    self_play_iterations: int = 1
     self_play_batch_size: int = 256
 
-    train_iterations: int = 8
+    train_iterations: int = 2
     train_batch_size: int = 8192
 
     experience_buffer_size: int = 1_000_000
@@ -171,7 +171,11 @@ def evaluate_net_v_baseline(variables: NetworkVariables, rng: PRNGKey, batch_siz
     first = state, observation
     _, rewards = jax.lax.scan(single_move, first, jax.random.split(rng, env.max_steps))
     chex.assert_shape(rewards, [env.max_steps, batch_size, 2])
-    return rewards.sum(axis=0).mean(axis=0)
+    net_rewards = rewards[:, :, 0].sum(axis=0)
+    wins = (net_rewards > 0).sum() / batch_size
+    draws = (net_rewards == 0).sum() / batch_size
+    losses = (net_rewards < 0).sum() / batch_size
+    return wins, draws, losses
 
 
 def run():
@@ -227,11 +231,11 @@ def run():
 
             print('Evaluating...')
             rng, subkey = jax.random.split(rng)
-            rewards = evaluate_net_v_baseline(variables, subkey, config.self_play_batch_size)
-            r_agent, r_baseline = rewards
-            print(f'Agent: {r_agent} Baseline: {r_baseline}')
-            log['eval/agent_reward'] = r_agent
-            log['eval/baseline_reward'] = r_baseline
+            wins, draws, losses = evaluate_net_v_baseline(variables, subkey, config.self_play_batch_size)
+            print(f'Wins: {wins:.2f}, Draws: {draws:.2f}, Losses: {losses:.2f}')
+            log['eval/wins'] = wins
+            log['eval/draws'] = draws
+            log['eval/losses'] = losses
 
             log['iteration'] += 1
 
