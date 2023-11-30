@@ -4,15 +4,15 @@ from bridge_bidding_2p import BridgeBidding2P, State
 from type_aliases import Observation, Reward, Done, Action
 
 
-# env = BridgeBidding2P()
-# observation_shape = (480,)
-# num_actions = 38
-# max_steps = 32
-
-env = pgx.make("othello")
-observation_shape = (8, 8, 2)
-num_actions = 65
+env = BridgeBidding2P()
+observation_shape = (480,)
+num_actions = 38
 max_steps = 64
+
+# env = pgx.make("othello")
+# observation_shape = (8, 8, 2)
+# num_actions = 65
+# max_steps = 64
 
 
 def reset(rng: chex.PRNGKey) -> tuple[State, Observation]:

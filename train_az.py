@@ -1,6 +1,5 @@
 import jax
 import jax.numpy as jnp
-import pgx
 from pgx import State
 import chex
 from chex import PRNGKey
@@ -169,39 +168,43 @@ def make_train_step(opt: optax.GradientTransformation):
 
 @partial(jax.jit, static_argnames=('batch_size',))
 def evaluate_net_v_baseline(variables: NetworkVariables, rng: PRNGKey, batch_size: int):
-    baseline = pgx.make_baseline_model('othello_v0')
     def single_move(prev: tuple[State, Observation], rng: PRNGKey) -> tuple[tuple[State, Observation], Reward]:
         state, observation = prev
-        rng0, rng1 = jax.random.split(rng)
+        rng0a, rng0b, rng1 = jax.random.split(rng, 3)
 
         action_mask = state.legal_action_mask
 
-        policy0 = az_agent.batched_compute_policy(variables, rng0, state, observation, config.mcts_simulations)
-        action0 = policy0.action
+        logits0 = az_agent.forward.apply(variables.params, variables.state, rng0a, observation, is_training=False)[0].pi
+        logits0_masked = jnp.where(action_mask, logits0, -1e9)
+        action0 = jax.random.categorical(rng0b, logits0_masked)
 
-        logits1, _ = baseline(observation)
+        logits1 = jnp.zeros((batch_size, env.num_actions))
         logits1_masked = jnp.where(action_mask, logits1, -1e9)
         action1 = jax.random.categorical(rng1, logits1_masked)
 
         action = jnp.where(state.current_player == 0, action0, action1)
 
         new_state, new_observation, new_reward, new_done = jax.vmap(env.step)(state, action)
-        return (new_state, new_observation), new_state.rewards
+        return (new_state, new_observation), (new_state.rewards, new_done)
 
     rng, subkey = jax.random.split(rng)
     state, observation = jax.vmap(env.reset)(jax.random.split(subkey, batch_size))
     first = state, observation
-    _, rewards = jax.lax.scan(single_move, first, jax.random.split(rng, env.max_steps))
+    _, out = jax.lax.scan(single_move, first, jax.random.split(rng, env.max_steps))
+    rewards, done = out
     chex.assert_shape(rewards, [env.max_steps, batch_size, 2])
+    chex.assert_shape(done, [env.max_steps, batch_size])
     net_rewards = rewards[:, :, 0].sum(axis=0)
-    wins = (net_rewards > 0).sum() / batch_size
-    draws = (net_rewards == 0).sum() / batch_size
-    losses = (net_rewards < 0).sum() / batch_size
+    episode_done = done.any(axis=0)
+    num_episodes = episode_done.sum()
+    wins = (net_rewards > 0 & episode_done).sum() / num_episodes
+    draws = (net_rewards == 0 & episode_done).sum() / num_episodes
+    losses = (net_rewards < 0 & episode_done).sum() / num_episodes
     return wins, draws, losses
 
 
 def run():
-    wandb.init(project="othello-zero", config=config.model_dump())
+    wandb.init(project="bzero", config=config.model_dump())
 
     rng = jax.random.PRNGKey(config.seed)
 
