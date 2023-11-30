@@ -1,15 +1,21 @@
+import chex
 import pgx
-from pgx import State
-from chex import PRNGKey
+from bridge_bidding_2p import BridgeBidding2P, State
 from type_aliases import Observation, Reward, Done, Action
 
 
+# env = BridgeBidding2P()
+# observation_shape = (480,)
+# num_actions = 38
+# max_steps = 32
+
 env = pgx.make("othello")
-num_actions = env.num_actions
+observation_shape = (8, 8, 2)
+num_actions = 65
 max_steps = 64
 
 
-def reset(rng: PRNGKey) -> tuple[State, Observation]:
+def reset(rng: chex.PRNGKey) -> tuple[State, Observation]:
     state = env.init(rng)
     return state, state.observation
 

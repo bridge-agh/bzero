@@ -45,65 +45,81 @@ else:
 
 
 @chex.dataclass(frozen=True)
-class Trajectory:
-    invalid: chex.Array
+class MoveOutput:
+    # observation before the move
     observation: Observation
+    # predicted policy
     action_weights: chex.Array
+    # reward after the move
     reward: Reward
-
-
-@partial(jax.jit, static_argnames=('batch_size', 'num_simulations'))
-def batched_self_play(variables: NetworkVariables, rng: PRNGKey, batch_size: int, num_simulations: int) -> Trajectory:
-    def single_move(prev: tuple[State, Observation, Done], rng: PRNGKey) -> tuple[tuple[State, Observation, Done], Trajectory]:
-        state, observation, done = prev
-        policy = az_agent.batched_compute_policy(variables, rng, state, observation, num_simulations)
-        new_state, new_observation, new_reward, new_done = jax.vmap(env.step)(state, policy.action)
-        return (new_state, new_observation, new_done), Trajectory(
-            invalid=done,
-            observation=observation,
-            action_weights=policy.action_weights,
-            reward=new_reward,
-        )
-    rng, subkey = jax.random.split(rng)
-    state, observation = jax.vmap(env.reset)(jax.random.split(subkey, batch_size))
-    first = state, observation, jnp.zeros(batch_size, dtype=jnp.bool_)
-    _, trajectory = jax.lax.scan(single_move, first, jax.random.split(rng, env.max_steps))
-    trajectory = jax.tree_util.tree_map(lambda x: jnp.swapaxes(x, 0, 1), trajectory)
-    jax.tree_util.tree_map(lambda x: chex.assert_shape(x, [batch_size, env.max_steps, *x.shape[2:]]), trajectory)
-    return trajectory
+    # whether the new state is terminal
+    done: Done
 
 
 @chex.dataclass(frozen=True)
 class TrainingExample:
     observation: chex.Array
-    value: chex.Array
-    action_weights: chex.Array
+    value_tgt: chex.Array
+    policy_tgt: chex.Array
+    value_mask: chex.Array
 
 
-def prepare_training_data(trajectory: Trajectory) -> list[TrainingExample]:
-    trajectory = jax.device_get(trajectory)
-    buffer: list[TrainingExample] = []
-    num_games = trajectory.invalid.shape[0]
-    for game in range(num_games):
-        observation = trajectory.observation[game]
-        invalid = trajectory.invalid[game]
-        action_weights = trajectory.action_weights[game]
-        reward = trajectory.reward[game]
-        num_steps = invalid.shape[0]
-        value: chex.Array | None = None
-        for step in reversed(range(num_steps)):
-            if invalid[step]:
-                continue
-            if value is None:
-                value = reward[step]
-            else:
-                value = -value
-            buffer.append(TrainingExample(
-                observation=observation[step],
-                value=value,
-                action_weights=action_weights[step],
-            ))
-    return buffer
+def prepare_training_data(trajectory: MoveOutput) -> TrainingExample:
+    chex.assert_shape(trajectory.observation, [env.max_steps, config.self_play_batch_size, *env.observation_shape])
+    chex.assert_shape(trajectory.action_weights, [env.max_steps, config.self_play_batch_size, env.num_actions])
+    chex.assert_shape(trajectory.reward, [env.max_steps, config.self_play_batch_size])
+    chex.assert_shape(trajectory.done, [env.max_steps, config.self_play_batch_size])
+
+    batch_size = trajectory.done.shape[1]
+
+    # every MoveOutput up until the last one with done=True is valid
+    value_mask = (jnp.cumsum(trajectory.done[::-1, :], axis=0)[::-1, :] >= 1).astype(jnp.float32)
+    chex.assert_shape(value_mask, [env.max_steps, batch_size])
+
+    def body_fn(carry, i):
+        # when processing a terminal state, discard the values of future states
+        discount = jnp.where(trajectory.done[i], 0.0, -1.0)
+        v = trajectory.reward[i] + discount * carry
+        return v, v
+
+    # scan from the last state to the first accumulating the value
+    _, value_tgt = jax.lax.scan(
+        body_fn,
+        # value accumulator
+        jnp.zeros(batch_size),
+        # step index
+        env.max_steps - jnp.arange(env.max_steps) - 1,
+    )
+    # re-reverse
+    value_tgt = value_tgt[::-1, :]
+    chex.assert_shape(value_tgt, [env.max_steps, batch_size])
+
+    return TrainingExample(
+        observation=trajectory.observation,
+        policy_tgt=trajectory.action_weights,
+        value_tgt=value_tgt,
+        value_mask=value_mask,
+    )
+
+
+@partial(jax.jit, static_argnames=('batch_size', 'num_simulations'))
+def batched_self_play(variables: NetworkVariables, rng: PRNGKey, batch_size: int, num_simulations: int) -> TrainingExample:
+    def batched_single_move(prev: tuple[State, Observation, Done], rng: PRNGKey) -> tuple[tuple[State, Observation, Done], MoveOutput]:
+        state, observation, done = prev
+        policy = az_agent.batched_compute_policy(variables, rng, state, observation, num_simulations)
+        new_state, new_observation, new_reward, new_done = jax.vmap(env.step)(state, policy.action)
+        return (new_state, new_observation, new_done), MoveOutput(
+            observation=observation,
+            action_weights=policy.action_weights,
+            reward=new_reward,
+            done=new_done,
+        )
+    rng, subkey = jax.random.split(rng)
+    state, observation = jax.vmap(env.reset)(jax.random.split(subkey, batch_size))
+    first = state, observation, jnp.zeros(batch_size, dtype=jnp.bool_)
+    _, trajectory = jax.lax.scan(batched_single_move, first, jax.random.split(rng, env.max_steps))
+    jax.tree_util.tree_map(lambda x: chex.assert_shape(x, [env.max_steps, batch_size, *x.shape[2:]]), trajectory)
+    return prepare_training_data(trajectory)
 
 
 def collect_self_play_data(
@@ -115,21 +131,23 @@ def collect_self_play_data(
     buffer: list[TrainingExample] = []
     for _ in track(range(iterations), description="Self-play"):
         rng, subkey = jax.random.split(rng)
-        trajectory = batched_self_play(variables, subkey, batch_size, config.mcts_simulations)
-        buffer.extend(prepare_training_data(jax.device_get(trajectory)))
+        batch = batched_self_play(variables, subkey, batch_size, config.mcts_simulations)
+        batch = jax.device_get(batch)
+        examples = [jax.tree_util.tree_map(lambda x: x[step, game], batch) for step in range(env.max_steps) for game in range(batch_size)]
+        buffer.extend(examples)
     return buffer
 
 
 def loss_fn(params: hk.Params, state: hk.Params, rng: PRNGKey, batch: TrainingExample):
     outputs, new_state = az_agent.forward.apply(params, state, rng, batch.observation, is_training=True)
 
-    chex.assert_equal_shape([outputs.pi, batch.action_weights])
-    chex.assert_equal_shape([outputs.v, batch.value])
+    chex.assert_equal_shape([outputs.pi, batch.policy_tgt])
+    chex.assert_equal_shape([outputs.v, batch.value_tgt])
 
-    value_loss = optax.l2_loss(outputs.v, batch.value)
-    value_loss = jnp.mean(value_loss)
+    value_loss = optax.l2_loss(outputs.v, batch.value_tgt)
+    value_loss = jnp.mean(value_loss * batch.value_mask)
 
-    target_pr = batch.action_weights
+    target_pr = batch.policy_tgt
     target_pr = jnp.where(target_pr > 0.0, target_pr, 1e-9)
     action_logits = jax.nn.log_softmax(outputs.pi, axis=-1)
     policy_loss = jnp.sum(target_pr * (jnp.log(target_pr) - action_logits), axis=-1)
@@ -156,11 +174,12 @@ def evaluate_net_v_baseline(variables: NetworkVariables, rng: PRNGKey, batch_siz
         state, observation = prev
         rng0, rng1 = jax.random.split(rng)
 
+        action_mask = state.legal_action_mask
+
         policy0 = az_agent.batched_compute_policy(variables, rng0, state, observation, config.mcts_simulations)
         action0 = policy0.action
 
         logits1, _ = baseline(observation)
-        action_mask = state.legal_action_mask
         logits1_masked = jnp.where(action_mask, logits1, -1e9)
         action1 = jax.random.categorical(rng1, logits1_masked)
 

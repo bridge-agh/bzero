@@ -1,11 +1,10 @@
 import jax
 import jax.numpy as jnp
 from pgx import State
+import chex
 from chex import PRNGKey
 import haiku as hk
 import mctx
-
-from functools import partial
 
 from type_aliases import Action, Observation
 from az_network import AlphaZeroNetwork, NetworkVariables, NetworkOutputs, DiscreteActionHead
@@ -22,8 +21,12 @@ def act_randomly(rng: PRNGKey, state: State) -> Action:
 
 @hk.transform_with_state
 def forward(observation: Observation, is_training: bool) -> NetworkOutputs:
+    chex.assert_shape(observation, [None, *env.observation_shape])
+    x = observation.astype(jnp.float32)
+    # x = hk.Linear(4 * 4 * 32)(x)
+    # x = jnp.reshape(x, [-1, 4, 4, 32])
     net = AlphaZeroNetwork(action_head=DiscreteActionHead(num_actions=env.num_actions))
-    return net(observation.astype(jnp.float32), is_training=is_training)
+    return net(x, is_training=is_training)
 
 
 def initial_variables(rng: PRNGKey) -> NetworkVariables:
