@@ -8,7 +8,7 @@ import mctx
 
 from type_aliases import Action, Observation
 from az_network import AlphaZeroNetwork, NetworkVariables, NetworkOutputs, DiscreteActionHead
-import env_wrapper as env
+import bridge_env as env
 
 
 INITIALIZE_ENVS = 512

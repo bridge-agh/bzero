@@ -1,3 +1,5 @@
 __pycache__
-baselines
-wandb
+/baselines/
+/wandb/
+/dds_results/
+/research/

@@ -14,7 +14,7 @@ import wandb
 import pickle
 
 from type_aliases import Reward, Observation, Done
-import env_wrapper as env
+import bridge_env as env
 from az_network import NetworkVariables
 import az_agent
 
