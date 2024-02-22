@@ -108,18 +108,20 @@ def elo_update(elo_a, elo_b, result):
 
 def main():
     player_names = [
+        "random",
         "mcts-32",
         "mcts-64",
-        "random",
+        "mcts-128",
         "bzero",
     ]
 
     num_players = len(player_names)
 
     policies = [
+        random_policy,
         make_mcts_policy(32),
         make_mcts_policy(64),
-        random_policy,
+        make_mcts_policy(128),
         make_bzero_policy(),
     ]
 
@@ -147,29 +149,32 @@ def main():
 
     try:
         while True:
-            rng, subkey = jax.random.split(rng)
-            p0, p1 = jax.random.choice(subkey, num_players, (2,), replace=False).sort()
+            for p0 in range(num_players - 1):
+                for p1 in range(p0 + 1, num_players):
+                    rng, subkey = jax.random.split(rng)
+                    results, dones = eval_funcs[p0][p1](subkey)
 
-            rng, subkey = jax.random.split(rng)
-            results, dones = eval_funcs[p0][p1](subkey)
-            results = results[dones]
+                    for result, done in zip(results, dones):
+                        if done:
+                            game_history.append([p0, p1, result])
 
-            for result, done in zip(results, dones):
-                if done:
-                    game_history.append([p0, p1, result])
+                    rng, subkey = jax.random.split(rng)
+                    elo_ratings = compute_elo_ratings(subkey)
 
-            rng, subkey = jax.random.split(rng)
-            elo_ratings = compute_elo_ratings(subkey)
+                    logs = elo_ratings
+                    logs["num_games"] = len(game_history)
 
-            logs = elo_ratings
-            logs["num_games"] = len(game_history)
+                    pprint(logs)
+                    wandb.log(logs)
 
-            pprint(logs)
-            wandb.log(logs)
+            with open(f"game_history-{len(game_history)}.pkl", "wb") as f:
+                pickle.dump(game_history, f)
     except KeyboardInterrupt:
         pass
     finally:
         wandb.finish()
+        with open(f"game_history-{len(game_history)}.pkl", "wb") as f:
+            pickle.dump(game_history, f)
 
 
 if __name__ == "__main__":
