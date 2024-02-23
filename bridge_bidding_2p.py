@@ -14,6 +14,7 @@ class State:
     legal_action_mask: chex.Array
     
     _env_state: pgx.State
+    _init_rng: chex.PRNGKey
 
     def _repr_html_(self) -> str:
         return self._env_state._repr_html_()
@@ -58,6 +59,7 @@ class BridgeBidding2P:
             truncated=env_state.truncated,
             legal_action_mask=env_state.legal_action_mask,
             _env_state=env_state,
+            _init_rng=key,
         )
 
     def step(self, state, action):
@@ -70,4 +72,5 @@ class BridgeBidding2P:
             truncated=env_state.truncated,
             legal_action_mask=env_state.legal_action_mask,
             _env_state=env_state,
+            _init_rng=state._init_rng,
         )

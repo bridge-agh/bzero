@@ -1,6 +1,7 @@
 import jax
 import jax.numpy as jnp
 
+import numpy as np
 import wandb
 
 from functools import partial
@@ -11,6 +12,7 @@ import chex
 from chex import PRNGKey
 
 from pgx import State
+from pgx.bridge_bidding import BID_OFFSET_NUM, PASS_ACTION_NUM
 
 from type_aliases import Observation, Reward, Done, Action
 import bridge_env as env
@@ -69,6 +71,44 @@ def make_bzero_policy():
     return bzero_policy
 
 
+def argmax_reverse(x):
+    chex.assert_rank(x, 1)
+    return x.shape[0] - jnp.argmax(x[::-1]) - 1
+
+
+def get_reward_for_bid(state, bid):
+    player = state.current_player
+    chex.assert_shape(state._init_rng, [])
+    state, _ = env.reset(state._init_rng)
+    we_play_first = state.current_player == player
+    action = bid + BID_OFFSET_NUM
+    state, obs, rew, done = env.step(state, jnp.where(we_play_first, action, PASS_ACTION_NUM))
+    state, obs, rew, done = env.step(state, jnp.where(we_play_first, PASS_ACTION_NUM, action))
+    state, obs, rew, done = env.step(state, PASS_ACTION_NUM)
+    state, obs, rew, done = env.step(state, PASS_ACTION_NUM)
+    reward_we_play_first = state.rewards[player]
+    state, obs, rew, done = env.step(state, PASS_ACTION_NUM)
+    reward_we_play_second = state.rewards[player]
+    return jnp.where(we_play_first, reward_we_play_first, reward_we_play_second)
+
+
+def get_best_bid(state):
+    rewards = jax.vmap(get_reward_for_bid, in_axes=[None, 0])(state, jnp.arange(35))
+    return argmax_reverse(rewards)
+
+
+def dds_policy(rng: PRNGKey, state: State) -> chex.Array:
+    already_bid = state._env_state._step_count > 2
+    chex.assert_shape(already_bid, [None])
+    best_bid = jax.vmap(get_best_bid)(state)
+    best_action = jnp.where(
+        already_bid,
+        PASS_ACTION_NUM,
+        best_bid + BID_OFFSET_NUM,
+    )
+    return jax.nn.one_hot(best_action, env.num_actions) * 200 + jax.nn.one_hot(PASS_ACTION_NUM, env.num_actions) * 100
+
+
 def expected(A, B):
     """
     Calculate expected score of A in a match against B
@@ -110,8 +150,8 @@ def main():
     player_names = [
         "random",
         "mcts-32",
-        "mcts-64",
         "mcts-128",
+        "dds",
         "bzero",
     ]
 
@@ -120,8 +160,8 @@ def main():
     policies = [
         random_policy,
         make_mcts_policy(32),
-        make_mcts_policy(64),
         make_mcts_policy(128),
+        dds_policy,
         make_bzero_policy(),
     ]
 
@@ -135,13 +175,15 @@ def main():
 
     game_history = []
 
-    def compute_elo_ratings(rng):
-        ratings = [1000 for _ in range(num_players)]
-
-        for p0, p1, result in jax.random.permutation(rng, jnp.array(game_history, dtype=jnp.int32), independent=True):
-            ratings[p0], ratings[p1] = elo_update(ratings[p0], ratings[p1], result)
-
-        return {name: rating for name, rating in zip(player_names, ratings)}
+    def compute_elo_ratings():
+        avg_elo_ratings = np.ones(num_players) * 1000
+        for _ in range(100):
+            elo_ratings = np.ones(num_players) * 1000
+            for p0, p1, result in np.random.permutation(game_history):
+                elo_ratings[p0], elo_ratings[p1] = elo_update(elo_ratings[p0], elo_ratings[p1], result)
+            avg_elo_ratings += elo_ratings
+        avg_elo_ratings /= 100
+        return {name: rating for name, rating in zip(player_names, avg_elo_ratings)}
 
     rng = jax.random.key(0)
 
@@ -156,10 +198,9 @@ def main():
 
                     for result, done in zip(results, dones):
                         if done:
-                            game_history.append([p0, p1, result])
+                            game_history.append([p0, p1, result.astype(jnp.int32).item()])
 
-                    rng, subkey = jax.random.split(rng)
-                    elo_ratings = compute_elo_ratings(subkey)
+                    elo_ratings = compute_elo_ratings()
 
                     logs = elo_ratings
                     logs["num_games"] = len(game_history)
