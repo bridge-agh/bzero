@@ -146,6 +146,18 @@ def elo_update(elo_a, elo_b, result):
     return new_a, new_b
 
 
+def compute_elo_ratings(player_names, history):
+    num_players = len(player_names)
+    avg_elo_ratings = np.zeros(num_players)
+    for _ in range(100):
+        elo_ratings = np.ones(num_players) * 1000
+        for p0, p1, result in np.random.permutation(history):
+            elo_ratings[p0], elo_ratings[p1] = elo_update(elo_ratings[p0], elo_ratings[p1], result)
+        avg_elo_ratings += elo_ratings
+    avg_elo_ratings /= 100
+    return {name: rating for name, rating in zip(player_names, avg_elo_ratings)}
+
+
 def main():
     player_names = [
         "random",
@@ -175,16 +187,6 @@ def main():
 
     game_history = []
 
-    def compute_elo_ratings():
-        avg_elo_ratings = np.ones(num_players) * 1000
-        for _ in range(100):
-            elo_ratings = np.ones(num_players) * 1000
-            for p0, p1, result in np.random.permutation(game_history):
-                elo_ratings[p0], elo_ratings[p1] = elo_update(elo_ratings[p0], elo_ratings[p1], result)
-            avg_elo_ratings += elo_ratings
-        avg_elo_ratings /= 100
-        return {name: rating for name, rating in zip(player_names, avg_elo_ratings)}
-
     rng = jax.random.key(0)
 
     wandb.init(project="bridge-elo")
@@ -200,7 +202,7 @@ def main():
                         if done:
                             game_history.append([p0, p1, result.astype(jnp.int32).item()])
 
-                    elo_ratings = compute_elo_ratings()
+                    elo_ratings = compute_elo_ratings(player_names, game_history)
 
                     logs = elo_ratings
                     logs["num_games"] = len(game_history)
