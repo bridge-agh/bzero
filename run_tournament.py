@@ -73,7 +73,8 @@ def make_bzero_policy():
 
 def argmax_reverse(x):
     chex.assert_rank(x, 1)
-    return x.shape[0] - jnp.argmax(x[::-1]) - 1
+
+    return jnp.where(jnp.any(x > 0), x.shape[0] - jnp.argmax(x[::-1]) - 1, -3)
 
 
 def get_reward_for_bid(state, bid):
