@@ -11,7 +11,11 @@ import bridge_env as env
 
 def argmax_reverse(x):
     chex.assert_rank(x, 1)
-    return x.shape[0] - jnp.argmax(x[::-1]) - 1
+    return jnp.where(
+        jnp.any(x > 0),
+        x.shape[0] - jnp.argmax(x[::-1]) - 1,
+        PASS_ACTION_NUM - BID_OFFSET_NUM,
+    )
 
 
 def get_reward_for_bid(state: State, bid: chex.Array) -> chex.Array:
