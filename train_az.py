@@ -266,6 +266,10 @@ def run():
 
             wandb.log(log)
 
+            if log['iteration'] % 500 == 0:
+                with open(f'model-{log["iteration"]}.pkl', 'wb') as f:
+                    pickle.dump(variables, f)
+
     except KeyboardInterrupt:
         pass
 
