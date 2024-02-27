@@ -3,3 +3,4 @@ __pycache__
 /wandb/
 /dds_results/
 /research/
+.venv
