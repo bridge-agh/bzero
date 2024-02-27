@@ -63,7 +63,7 @@ def make_mcts_policy(num_simulations: int):
     return mcts_policy
 
 
-def make_bzero_policy(p='models/bridge_v2.pkl'):
+def make_bzero_policy(p='models/bridge_v1.pkl'):
     with open(p, 'rb') as f:
         variables = pickle.load(f)
     def bzero_policy(rng: PRNGKey, state: State) -> chex.Array:
