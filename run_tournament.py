@@ -63,8 +63,8 @@ def make_mcts_policy(num_simulations: int):
     return mcts_policy
 
 
-def make_bzero_policy():
-    with open('models/bridge_v1.pkl', 'rb') as f:
+def make_bzero_policy(p='models/bridge_v2.pkl'):
+    with open(p, 'rb') as f:
         variables = pickle.load(f)
     def bzero_policy(rng: PRNGKey, state: State) -> chex.Array:
         outputs, _ = az_agent.forward.apply(variables.params, variables.state, rng, state.observation, is_training=False)
@@ -179,8 +179,6 @@ def main():
         pass
     finally:
         wandb.finish()
-        with open(f"game_history-{len(game_history)}.pkl", "wb") as f:
-            pickle.dump(game_history, f)
 
 
 if __name__ == "__main__":
