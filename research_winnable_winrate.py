@@ -8,7 +8,7 @@ from tqdm import tqdm
 from pgx import State
 from pgx.bridge_bidding import BID_OFFSET_NUM, PASS_ACTION_NUM
 
-from run_tournament import dds_policy, make_bzero_policy
+from run_tournament import dds_policy, make_bzero_policy, random_policy, make_mcts_policy
 import bridge_env as env
 from type_aliases import Done, Reward
 from dds_agent import argmax_reverse
@@ -54,18 +54,10 @@ def get_winnable_game(rng):
 
 def evaluate_pvp_winnable(rng: chex.PRNGKey, policy1, policy2, batch_size: int):
     def single_move(state: State, rng: chex.PRNGKey) -> tuple[State, tuple[Reward, Done]]:
-        rng0a, rng0b, rng1a, rng1b = jax.random.split(rng, 4)
+        rng0, rng1 = jax.random.split(rng)
 
-        action_mask = state.legal_action_mask
-
-        logits0 = policy1(rng0a, state)
-        logits0_masked = jnp.where(action_mask, logits0, -1e9)
-        action0 = jax.random.categorical(rng0b, logits0_masked)
-
-        logits1 = policy2(rng1a, state)
-        logits1_masked = jnp.where(action_mask, logits1, -1e9)
-        action1 = jax.random.categorical(rng1b, logits1_masked)
-
+        action0 = policy1(rng0, state)
+        action1 = policy2(rng1, state)
         action = jnp.where(state.current_player == 0, action0, action1)
 
         new_state, new_observation, new_reward, new_done = jax.vmap(env.step)(
@@ -91,6 +83,9 @@ if __name__ == '__main__':
             evaluate_pvp_winnable,
             policy1=dds_policy,
             policy2=make_bzero_policy(),
+            # policy2=random_policy,
+            # policy2=make_mcts_policy(32),
+            # policy2=make_mcts_policy(2048),
             batch_size=64,
         )
     )
@@ -106,4 +101,4 @@ if __name__ == '__main__':
                 game_history.append(result.astype(jnp.int32).item())
 
         bzero_winrate = jnp.mean(jnp.array(game_history) < 0)
-        print('bzero winrate:', bzero_winrate)
+        print('winrate:', bzero_winrate)

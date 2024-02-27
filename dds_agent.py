@@ -48,4 +48,7 @@ def dds_policy(rng: chex.PRNGKey, state: State) -> chex.Array:
         PASS_ACTION_NUM,
         best_bid + BID_OFFSET_NUM,
     )
-    return jax.nn.one_hot(best_action, env.num_actions) * 200 + jax.nn.one_hot(PASS_ACTION_NUM, env.num_actions) * 100
+    logits = jax.nn.one_hot(best_action, env.num_actions) * 2 + jax.nn.one_hot(PASS_ACTION_NUM, env.num_actions)
+    action_mask = state.legal_action_mask
+    logits_masked = jnp.where(action_mask, logits, -1)
+    return logits_masked.argmax(axis=-1)

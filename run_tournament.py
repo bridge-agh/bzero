@@ -23,18 +23,10 @@ from dds_agent import dds_policy
 
 def evaluate_pvp(rng: PRNGKey, policy1, policy2, batch_size: int):
     def single_move(state: State, rng: PRNGKey) -> tuple[State, tuple[Reward, Done]]:
-        rng0a, rng0b, rng1a, rng1b = jax.random.split(rng, 4)
+        rng0, rng1 = jax.random.split(rng)
 
-        action_mask = state.legal_action_mask
-
-        logits0 = policy1(rng0a, state)
-        logits0_masked = jnp.where(action_mask, logits0, -1e9)
-        action0 = jax.random.categorical(rng0b, logits0_masked)
-
-        logits1 = policy2(rng1a, state)
-        logits1_masked = jnp.where(action_mask, logits1, -1e9)
-        action1 = jax.random.categorical(rng1b, logits1_masked)
-
+        action0 = policy1(rng0, state)
+        action1 = policy2(rng1, state)
         action = jnp.where(state.current_player == 0, action0, action1)
 
         new_state, new_observation, new_reward, new_done = jax.vmap(env.step)(state, action)
@@ -53,13 +45,19 @@ def evaluate_pvp(rng: PRNGKey, policy1, policy2, batch_size: int):
 
 
 def random_policy(rng: PRNGKey, state: State) -> chex.Array:
-    return jnp.zeros(env.num_actions)
+    logits = jnp.zeros(env.num_actions)
+    action_mask = state.legal_action_mask
+    logits_masked = jnp.where(action_mask, logits, -1e9)
+    return jax.random.categorical(rng, logits_masked)
 
 
 def make_mcts_policy(num_simulations: int):
     def mcts_policy(rng: PRNGKey, state: State) -> chex.Array:
         out = mcts_agent.batched_compute_policy(rng, state, num_simulations)
-        return out.action_weights
+        logits = out.action_weights
+        action_mask = state.legal_action_mask
+        logits_masked = jnp.where(action_mask, logits, -1e9)
+        return logits_masked.argmax(axis=-1)
     return mcts_policy
 
 
@@ -68,7 +66,10 @@ def make_bzero_policy(p='models/bridge_v1.pkl'):
         variables = pickle.load(f)
     def bzero_policy(rng: PRNGKey, state: State) -> chex.Array:
         outputs, _ = az_agent.forward.apply(variables.params, variables.state, rng, state.observation, is_training=False)
-        return outputs.pi
+        logits = outputs.pi
+        action_mask = state.legal_action_mask
+        logits_masked = jnp.where(action_mask, logits, -1e9)
+        return logits_masked.argmax(axis=-1)
     return bzero_policy
 
 
