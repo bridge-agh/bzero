@@ -78,27 +78,30 @@ def evaluate_pvp_winnable(rng: chex.PRNGKey, policy1, policy2, batch_size: int):
 
 
 if __name__ == '__main__':
-    eval_func = jax.jit(
-        partial(
-            evaluate_pvp_winnable,
-            policy1=dds_policy,
-            policy2=make_bzero_policy(),
-            # policy2=random_policy,
-            # policy2=make_mcts_policy(32),
-            # policy2=make_mcts_policy(2048),
-            batch_size=64,
+    for policy_name, policy in [
+        ('bzero', make_bzero_policy()),
+        ('random', random_policy),
+        ('mcts128', make_mcts_policy(128)),
+        ('mcts512', make_mcts_policy(512)),
+    ]:
+        eval_func = jax.jit(
+            partial(
+                evaluate_pvp_winnable,
+                policy1=dds_policy,
+                policy2=policy,
+                batch_size=64,
+            )
         )
-    )
 
-    rng = jax.random.key(0)
-    game_history = []
+        rng = jax.random.key(0)
+        game_history = []
 
-    for _ in tqdm(range(5)):
-        rng, subkey = jax.random.split(rng)
-        results, dones = eval_func(subkey)
-        for result, done in zip(results, dones):
-            if done:
-                game_history.append(result.astype(jnp.int32).item())
+        for _ in tqdm(range(16)):
+            rng, subkey = jax.random.split(rng)
+            results, dones = eval_func(subkey)
+            for result, done in zip(results, dones):
+                if done:
+                    game_history.append(result.astype(jnp.int32).item())
 
-        bzero_winrate = jnp.mean(jnp.array(game_history) < 0)
-        print('winrate:', bzero_winrate)
+        winrate = jnp.mean(jnp.array(game_history) < 0)
+        print(f'{policy_name} winrate:', winrate)
