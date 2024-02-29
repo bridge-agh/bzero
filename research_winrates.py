@@ -8,7 +8,7 @@ player_names = [
     "dds",
     "bzero",
 ]
-history_file_name = 'game_history/random-mcts32-mcts128-dds-bzero.pkl'
+history_file_name = 'game_history/random-mcts32-mcts128-dds-bzero-v2.pkl'
 
 
 def min_num_games(num_players):

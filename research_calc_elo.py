@@ -15,7 +15,7 @@ def expected(A, B):
     return 1 / (1 + 10 ** ((B - A) / 400))
 
 
-def elo(old, exp, score, k=32):
+def elo(old, exp, score, k):
     """
     Calculate the new Elo rating for a player
 
@@ -27,7 +27,7 @@ def elo(old, exp, score, k=32):
     return old + k * (score - exp)
 
 
-def elo_update(elo_a, elo_b, result, k=32):
+def elo_update(elo_a, elo_b, result, k):
     """
     Update the Elo ratings based on the results of a series of games
 
@@ -43,8 +43,10 @@ def elo_update(elo_a, elo_b, result, k=32):
 
 
 if __name__ == "__main__":
-    with open("game_history/random-mcts32-mcts128-dds-bzero.pkl", "rb") as f:
+    with open("game_history/random-mcts32-mcts128-dds-bzero-v2.pkl", "rb") as f:
         game_history = pickle.load(f)
+
+    K = 4
 
     num_players = 5
     player_names = [
@@ -62,7 +64,7 @@ if __name__ == "__main__":
         elo_ratings = np.ones(num_players) * 1000
         for p0, p1, result in rng.permutation(game_history):
             elo_ratings[p0], elo_ratings[p1] = elo_update(
-                elo_ratings[p0], elo_ratings[p1], result, 1
+                elo_ratings[p0], elo_ratings[p1], result, K
             )
         perm_elo_ratings.append(elo_ratings)
     perm_elo_ratings = np.array(perm_elo_ratings)
@@ -103,7 +105,7 @@ if __name__ == "__main__":
         elo_rating = [np.ones(num_players) * 1000]
         for p0, p1, result in rng.permutation(game_history):
             e = elo_rating[-1].copy()
-            e[p0], e[p1] = elo_update(e[p0], e[p1], result, 1)
+            e[p0], e[p1] = elo_update(e[p0], e[p1], result, K)
             elo_rating.append(e)
         elo_rating = np.array(elo_rating)
         for i in range(num_players):
