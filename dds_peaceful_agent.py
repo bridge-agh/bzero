@@ -3,9 +3,9 @@ import jax.numpy as jnp
 
 import chex
 
-from pgx import State
 from pgx.bridge_bidding import BID_OFFSET_NUM, PASS_ACTION_NUM
 
+from bridge_bidding_2p import State
 import bridge_env as env
 
 

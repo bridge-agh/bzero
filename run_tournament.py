@@ -18,7 +18,7 @@ from type_aliases import Observation, Reward, Done, Action
 import bridge_env as env
 import mcts_agent
 import az_agent
-from dds_agent import dds_policy
+from dds_aggresive_agent import dds_policy
 
 
 def evaluate_pvp(rng: PRNGKey, policy1, policy2, batch_size: int):
