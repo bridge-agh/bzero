@@ -8,10 +8,12 @@ from tqdm import tqdm
 from pgx.bridge_bidding import BID_OFFSET_NUM, PASS_ACTION_NUM
 
 from bridge_bidding_2p import State
+from dds_common import argmax_reverse
 from run_tournament import make_bzero_policy, random_policy, make_mcts_policy
 import bridge_env as env
 from type_aliases import Done, Reward
-from dds_aggresive_agent import argmax_reverse, dds_policy
+from dds_peaceful_agent import dds_policy as dds_peaceful_policy
+from dds_aggressive_agent import dds_policy as dds_aggressive_policy
 
 
 def get_reward_for_bid_first_players(state, bid, player):
@@ -95,9 +97,7 @@ def evaluate_pvp_winnable(rng: chex.PRNGKey, policy1, policy2, batch_size: int):
         rng0, rng1 = jax.random.split(rng)
 
         action0 = policy1(rng0, state)
-        # jax.debug.print('action0 {}', action0)
         action1 = policy2(rng1, state)
-        # jax.debug.print('action1 {}', action1)
 
         action = jnp.where(state.current_player == 0, action0, action1)
 
@@ -105,7 +105,6 @@ def evaluate_pvp_winnable(rng: chex.PRNGKey, policy1, policy2, batch_size: int):
             state, action
         )
 
-        # jax.debug.print('step done')
         return new_state, (new_state.rewards, new_done)
 
     rng, subkey = jax.random.split(rng)
@@ -130,7 +129,7 @@ if __name__ == '__main__':
         eval_func = jax.jit(
             partial(
                 evaluate_pvp_winnable,
-                policy1=dds_policy,
+                policy1=dds_aggressive_policy,
                 policy2=policy,
                 batch_size=64,
             )

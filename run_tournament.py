@@ -18,7 +18,8 @@ from type_aliases import Observation, Reward, Done, Action
 import bridge_env as env
 import mcts_agent
 import az_agent
-from dds_aggresive_agent import dds_policy
+from dds_aggressive_agent import dds_policy as dds_aggressive_policy
+from dds_peaceful_agent import dds_policy as dds_peaceful_policy
 
 
 def evaluate_pvp(rng: PRNGKey, policy1, policy2, batch_size: int):
@@ -61,7 +62,7 @@ def make_mcts_policy(num_simulations: int):
     return mcts_policy
 
 
-def make_bzero_policy(p='models/bridge_v1.pkl'):
+def make_bzero_policy(p='models/bridge_v1.pkl') -> chex.Array:
     with open(p, 'rb') as f:
         variables = pickle.load(f)
     def bzero_policy(rng: PRNGKey, state: State) -> chex.Array:
@@ -126,8 +127,9 @@ def main():
     player_names = [
         "random",
         "mcts-32",
-        "mcts-128",
-        "dds",
+        "mcts-64",
+        "dds-aggressive",
+        "dds-peaceful",
         "bzero",
     ]
 
@@ -136,8 +138,9 @@ def main():
     policies = [
         random_policy,
         make_mcts_policy(32),
-        make_mcts_policy(128),
-        dds_policy,
+        make_mcts_policy(64),
+        dds_aggressive_policy,
+        dds_peaceful_policy,
         make_bzero_policy(),
     ]
 
