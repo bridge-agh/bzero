@@ -18,8 +18,8 @@ from type_aliases import Observation, Reward, Done, Action
 import bridge_env as env
 import mcts_agent
 import az_agent
-from dds_aggressive_agent import dds_policy as dds_aggressive_policy
-from dds_peaceful_agent import dds_policy as dds_peaceful_policy
+from dds_aggressive_agent import make_dds_policy as make_dds_aggressive_policy
+from dds_peaceful_agent import make_dds_policy as make_dds_peaceful_policy
 
 
 def evaluate_pvp(rng: PRNGKey, policy1, policy2, batch_size: int):
@@ -45,7 +45,7 @@ def evaluate_pvp(rng: PRNGKey, policy1, policy2, batch_size: int):
     return net_rewards, episode_done
 
 
-def random_policy(rng: PRNGKey, state: State) -> chex.Array:
+def make_random_policy(rng: PRNGKey, state: State) -> chex.Array:
     logits = jnp.zeros(env.num_actions)
     action_mask = state.legal_action_mask
     logits_masked = jnp.where(action_mask, logits, -1e9)
@@ -59,18 +59,23 @@ def make_mcts_policy(num_simulations: int):
         action_mask = state.legal_action_mask
         logits_masked = jnp.where(action_mask, logits, -1e9)
         return logits_masked.argmax(axis=-1)
+
     return mcts_policy
 
 
-def make_bzero_policy(p='models/bridge_v1.pkl') -> chex.Array:
-    with open(p, 'rb') as f:
+def make_bzero_policy(p="models/bridge_v1.pkl") -> chex.Array:
+    with open(p, "rb") as f:
         variables = pickle.load(f)
+
     def bzero_policy(rng: PRNGKey, state: State) -> chex.Array:
-        outputs, _ = az_agent.forward.apply(variables.params, variables.state, rng, state.observation, is_training=False)
+        outputs, _ = az_agent.forward.apply(
+            variables.params, variables.state, rng, state.observation, is_training=False
+        )
         logits = outputs.pi
         action_mask = state.legal_action_mask
         logits_masked = jnp.where(action_mask, logits, -1e9)
         return logits_masked.argmax(axis=-1)
+
     return bzero_policy
 
 
@@ -136,11 +141,11 @@ def main():
     num_players = len(player_names)
 
     policies = [
-        random_policy,
+        make_random_policy,
         make_mcts_policy(32),
         make_mcts_policy(64),
-        dds_aggressive_policy,
-        dds_peaceful_policy,
+        make_dds_aggressive_policy,
+        make_dds_peaceful_policy,
         make_bzero_policy(),
     ]
 

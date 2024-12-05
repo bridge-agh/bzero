@@ -19,13 +19,15 @@ def get_best_bid(state: State):
 
     legal_bids = state.legal_action_mask[BID_OFFSET_NUM:]
     legal_bids_indexes = jnp.where(legal_bids, jnp.arange(35), -1)
-    
-    rewards = jax.vmap(lambda bid: jax.lax.cond(bid < 0, lambda: -1., lambda: get_reward_for_bid(state, bid)))(legal_bids_indexes)
+
+    rewards = jax.vmap(lambda bid: jax.lax.cond(bid < 0, lambda: -1.0, lambda: get_reward_for_bid(state, bid)))(
+        legal_bids_indexes
+    )
 
     return argmax(rewards)
 
 
-def dds_policy(rng: chex.PRNGKey, state: State) -> chex.Array:
+def make_dds_policy(rng: chex.PRNGKey, state: State) -> chex.Array:
     # best bid is the lowest bid that win the game
     best_bid = jax.vmap(get_best_bid)(state)
     best_action = best_bid + BID_OFFSET_NUM

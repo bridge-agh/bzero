@@ -9,11 +9,11 @@ from pgx.bridge_bidding import BID_OFFSET_NUM, PASS_ACTION_NUM
 
 from bridge_bidding_2p import State
 from dds_common import argmax_reverse
-from run_tournament import make_bzero_policy, random_policy, make_mcts_policy
+from run_tournament import make_bzero_policy, make_random_policy, make_mcts_policy
 import bridge_env as env
 from type_aliases import Done, Reward
-from dds_peaceful_agent import dds_policy as dds_peaceful_policy
-from dds_aggressive_agent import dds_policy as dds_aggressive_policy
+from dds_peaceful_agent import make_dds_policy as make_dds_peaceful_policy
+from dds_aggressive_agent import make_dds_policy as make_dds_aggressive_policy
 
 
 def get_reward_for_bid_first_players(state, bid, player):
@@ -77,8 +77,9 @@ def loop(args):
     # second player must have higher bid but also bid ealier
     winnable = jax.lax.cond(
         first_player_0,
-        lambda: (max_bid_3 >= max_bid_2) & (max_bid_3 > max_bid_0) | (max_bid_1 >= max_bid_2) & (max_bid_1 >= max_bid_0),
-        lambda: (max_bid_3 > max_bid_2) & (max_bid_3 > max_bid_0) | (max_bid_1 > max_bid_2) & (max_bid_1 > max_bid_0)
+        lambda: (max_bid_3 >= max_bid_2) & (max_bid_3 > max_bid_0)
+        | (max_bid_1 >= max_bid_2) & (max_bid_1 >= max_bid_0),
+        lambda: (max_bid_3 > max_bid_2) & (max_bid_3 > max_bid_0) | (max_bid_1 > max_bid_2) & (max_bid_1 > max_bid_0),
     )
 
     return (winnable, subkey)
@@ -101,9 +102,7 @@ def evaluate_pvp_winnable(rng: chex.PRNGKey, policy1, policy2, batch_size: int):
 
         action = jnp.where(state.current_player == 0, action0, action1)
 
-        new_state, new_observation, new_reward, new_done = jax.vmap(env.step)(
-            state, action
-        )
+        new_state, new_observation, new_reward, new_done = jax.vmap(env.step)(state, action)
 
         return new_state, (new_state.rewards, new_done)
 
@@ -119,9 +118,9 @@ def evaluate_pvp_winnable(rng: chex.PRNGKey, policy1, policy2, batch_size: int):
     return net_rewards, episode_done
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     for policy_name, policy in [
-        ('bzero', make_bzero_policy()),
+        ("bzero", make_bzero_policy()),
         # ('random', random_policy),
         # ('mcts128', make_mcts_policy(128)),
         # ('mcts512', make_mcts_policy(512)),
@@ -129,7 +128,7 @@ if __name__ == '__main__':
         eval_func = jax.jit(
             partial(
                 evaluate_pvp_winnable,
-                policy1=dds_aggressive_policy,
+                policy1=make_dds_aggressive_policy,
                 policy2=policy,
                 batch_size=64,
             )
@@ -146,4 +145,4 @@ if __name__ == '__main__':
                     game_history.append(result.astype(jnp.int32).item())
 
         winrate = jnp.mean(jnp.array(game_history) < 0)
-        print(f'{policy_name} winrate:', winrate)
+        print(f"{policy_name} winrate:", winrate)

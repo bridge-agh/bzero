@@ -25,7 +25,7 @@ def get_best_bid(state: State):
     return argmax_reverse(rewards)
 
 
-def dds_policy(rng: chex.PRNGKey, state: State) -> chex.Array:
+def make_dds_policy(rng: chex.PRNGKey, state: State) -> chex.Array:
     # best bid is the highest bid that win the game
     best_bid = jax.vmap(get_best_bid)(state)
     best_action = best_bid + BID_OFFSET_NUM
