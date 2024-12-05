@@ -1,4 +1,5 @@
 import chex
+import jax
 import pgx
 from bridge_bidding_2p import BridgeBidding2P, State
 from type_aliases import Observation, Reward, Done, Action
