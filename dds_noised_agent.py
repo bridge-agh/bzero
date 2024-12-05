@@ -66,14 +66,6 @@ def get_best_bid(state: State, rng: chex.PRNGKey) -> chex.Array:
         ),
     )
 
-    # action = jax.lax.cond(
-    #     jnp.equal(real_argmax_ix, 0)
-    #     | jnp.less(int_rew_view_bids[real_argmin_ix], 0)
-    #     | jnp.equal(real_argmax_ix, real_argmin_ix),
-    #     lambda: PASS_ACTION_NUM - BID_OFFSET_NUM,
-    #     lambda: indices[jnp.int32(jnp.round((real_argmax_ix - 1 - real_argmin_ix) * DDS_QUALITY)) + real_argmin_ix],
-    # )
-
     # jax.debug.print(
     #     "{}\n{}\n{}\n{}\n{}\n{}\n",
     #     int_rew_view_bids,
@@ -83,9 +75,6 @@ def get_best_bid(state: State, rng: chex.PRNGKey) -> chex.Array:
     #     action,
     #     internal_rewards[action],
     # )
-    # make list of 35 element with value "-1"
-    # rewards = jnp.full((35,), -1.0)
-    # rewards = rewards.at[action].set(1.0)
 
     # jax.debug.print("{}", action)
 
@@ -104,22 +93,7 @@ def make_dds_policy(rng: chex.PRNGKey, state: State) -> chex.Array:
     # best bid is the lowest bid that win the game
     best_bid = jax.vmap(after_bid_check, in_axes=(0, None))(state, rng)
 
-    # jax.debug.print("{}", best_bid[0])
-
-    # best_bid = jax.vmap(get_best_bid, in_axes=(0, None))(state, rng)
     best_action = best_bid + BID_OFFSET_NUM
-
-    # zip bids_ixs with internal_rewards but for every batch
-    # zippped_bid_rewards = jax.vmap(lambda x, y: jnp.stack([x, y]), in_axes=(None, 0))(jnp.arange(35), internal_rewards)
-
-    # indices = jnp.argsort(internal_rewards, axis=1)
-
-    # jax.debug.print("{}\n{}\n{}\n", internal_rewards[0], indices[0], state.rewards[0])
-
-    # sort by internal rewards
-    # sorted_bids_ixs = jax.vmap(lambda x: x.argsort(axis=1))(zippped_bid_rewards)
-
-    # jax.debug.print("{}", sorted_bids_ixs[0])
 
     # logits: best action = 2 or -2, pass = 1, other = 0
     # summarizing, if every best action doesn't win the game, then pass
