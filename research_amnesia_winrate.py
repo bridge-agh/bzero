@@ -110,7 +110,7 @@ def get_repeated_bid(bid_history, player):
             is_new_bid_null,
             lambda: (True, ix, last_bid, False),
             lambda: jax.lax.cond(
-                jnp.logical_and(is_new_bid_not_action, is_last_bid_not_action, is_over_last_bid),
+                jnp.all(jnp.array([is_new_bid_not_action, is_last_bid_not_action, is_over_last_bid])),
                 lambda: (True, jnp.subtract(ix, 4), new_bid, True),  # found repeat
                 lambda: (False, jnp.add(ix, 4), new_bid, False),  # continue loop
             ),
@@ -123,31 +123,44 @@ def get_repeated_bid(bid_history, player):
 
     return jax.lax.cond(
         is_bid_repeated,
-        lambda: (ix, bid),
-        lambda: (-1, -1),
+        lambda: jnp.array((ix, bid)),
+        lambda: jnp.array((-1, -1)),
     )
+
+
+# def aloop(single_move, state, action_subkey):
+
+#     chex.assert_shape(state, [1])
+#     chex.assert_shape(action_subkey, ())
+
+#     return
 
 
 def find_repeated_state(single_move, repeated, reset_subkey, action_subkey):
-    state = env.reset(reset_subkey)
+    state, _ = jax.vmap(env.reset)(jnp.array([reset_subkey]))
     action_subkeys = jax.random.split(action_subkey, env.max_steps)
 
     # play until repeated bid
-    # state = jnp.array([state])
     state = jax.lax.fori_loop(0, repeated[0], lambda i, carry: single_move(carry, action_subkeys[i])[0], state)
-    # state = state[0]
+
+    chex.assert_shape(state.observation, (1, 480))
 
     # play higher repeated bid
-    state = env.step(state, repeated[1])
+    state, _, _, _ = jax.vmap(env.step, in_axes=(0, None))(state, repeated[1])
 
     # play until end of the game
-    # state = jnp.array([state])
     state = jax.lax.fori_loop(
         repeated[0] + 1, env.max_steps, lambda i, carry: single_move(carry, action_subkeys[i])[0], state
     )
-    # state = state[0]
+
+    # TODO return reward from loop as it is overwritten by zeros
+    # create function to sum rewards in loop, at the end carry will hold sum of rewards (the moment reward was returned by env)
 
     is_done = state.terminated | state.truncated
+    chex.assert_shape(is_done, (1,))
+
+    is_done = is_done[0]
+    chex.assert_shape(is_done, ())
 
     return jax.lax.cond(
         is_done,
@@ -160,23 +173,23 @@ def skip_loop(single_move, args):
     rng = args[3]
 
     rng, reset_subkey = jax.random.split(rng)
-    state, _ = env.reset(reset_subkey)
+    state, _ = jax.vmap(env.reset)(jnp.array([reset_subkey]))
 
     rng, action_subkey = jax.random.split(rng)
-    # state = jnp.array([state])
     state, out = jax.lax.scan(single_move, state, jax.random.split(action_subkey, env.max_steps))
-    # state = state[0]
     rewards, done = out
 
-    chex.assert_shape(rewards, [env.max_steps, 2])
-    chex.assert_shape(done, [env.max_steps])
+    chex.assert_shape(rewards, [env.max_steps, 1, 2])
+    chex.assert_shape(done, [env.max_steps, 1])
 
-    reward = rewards[:, 0].sum()
+    reward = rewards[:, :, 0].sum()
     is_done = done.any()
 
     bid_history = state._env_state._bidding_history[-1]
 
-    target_player = jnp.where(state._env_state._shuffled_players[-1] == 0)
+    target_player = jnp.where(state._env_state._shuffled_players[-1] == 0, size=1)[0][0]  # extract from tuple and array
+    chex.assert_shape(target_player, ())
+
     partner_player = jnp.mod(jnp.add(target_player, 2), 4)
 
     repeated = get_repeated_bid(
@@ -184,18 +197,21 @@ def skip_loop(single_move, args):
     )  # if (-1, -1) then no repeated bid -> we should find another game
 
     is_found, new_state = jax.lax.cond(
-        jnp.equal(repeated, (-1, -1)),
+        jnp.all(jnp.equal(repeated, jnp.array((-1, -1)))),
         lambda: (False, state),
         lambda: find_repeated_state(single_move, repeated, reset_subkey, action_subkey),
     )
 
-    not_found_return = (False, state, 0, rng)
+    not_found_return = (False, state, 0.0, rng, state)
+
+    chex.assert_shape(state.observation, (1, 480))
+    chex.assert_shape(new_state.observation, (1, 480))
 
     return jax.lax.cond(
         is_done,
         lambda: jax.lax.cond(
             is_found,
-            lambda: (True, new_state, reward, rng),
+            lambda: (True, new_state, reward, rng, state),
             lambda: not_found_return,
         ),
         lambda: not_found_return,
@@ -214,10 +230,30 @@ def get_game_with_skipped_bid(single_move, rng):
 
     loop = partial(skip_loop, single_move)
 
-    state = env.reset(rng)  # dummy state
-    result = jax.lax.while_loop(lambda cond: jnp.logical_not(cond[0]), loop, (False, state, 0, rng))
+    state, _ = jax.vmap(env.reset)(jnp.array([rng]))
+    result = jax.lax.while_loop(lambda cond: jnp.logical_not(cond[0]), loop, (False, state, 0.0, rng, state))
 
-    return result[1], result[2]
+    new_state, original_reward = result[1], result[2]
+    state = result[4]
+
+    jax.debug.print(
+        "new_state:\n{}\norig_reward: {}\nreward: {}\nisdone: {}\nint_rewards: {}\nstate: {}\n\n",
+        new_state._env_state._bidding_history,
+        original_reward,
+        new_state.rewards,
+        new_state.terminated | new_state.truncated,
+        new_state._env_state.rewards,
+        state._env_state.rewards,
+    )
+
+    chex.assert_shape(new_state.observation, (1, 480))
+    chex.assert_shape(original_reward, ())
+
+    # new_state = jnp.squeeze(new_state, 0)
+
+    # chex.assert_shape(new_state.observation, (480,))
+
+    return new_state, original_reward
 
 
 def evaluate_pvp_winnable(rng: chex.PRNGKey, policy1, policy2, batch_size: int):
@@ -239,10 +275,13 @@ def evaluate_pvp_winnable(rng: chex.PRNGKey, policy1, policy2, batch_size: int):
     state, orig_rewards = jax.vmap(get_games)(jax.random.split(subkey, batch_size))
     # first = state
     # state, out = jax.lax.scan(single_move, first, jax.random.split(rng, env.max_steps))
+    # state = jnp.squeeze(state, 1)
+
     rewards = state.rewards
-    chex.assert_shape(rewards, [env.max_steps, batch_size, 2])
+    chex.assert_shape(rewards, [batch_size, 1, 2])
+    chex.assert_shape(orig_rewards, [batch_size])
     # chex.assert_shape(done, [env.max_steps, batch_size])
-    net_rewards = rewards[:, :, 0].sum(axis=0)
+    net_rewards = rewards[:, :, 0].sum(axis=1)
     # episode_done = done.any(axis=0)
     return orig_rewards, net_rewards
 
@@ -259,7 +298,7 @@ if __name__ == "__main__":
                 evaluate_pvp_winnable,
                 policy1=make_bzero_policy(),
                 policy2=policy,
-                batch_size=64,
+                batch_size=32,
             )
         )
 
@@ -273,6 +312,9 @@ if __name__ == "__main__":
             for orig_result, result in zip(orig_results, results):
                 game_history_orig.append(orig_result.astype(jnp.int32).item())
                 game_history.append(result.astype(jnp.int32).item())
+
+        print(game_history_orig)
+        print(game_history)
 
         winrate_orig = jnp.mean(jnp.array(game_history_orig) < 0)
         winrate = jnp.mean(jnp.array(game_history) < 0)
