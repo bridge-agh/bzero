@@ -136,6 +136,18 @@ def get_repeated_bid(bid_history, player):
 #     return
 
 
+def reward_loop(action_subkey, single_move, i, carry):
+    state, reward = carry
+
+    new_state, out = single_move(state, action_subkey[i])
+
+    new_reward = jnp.add(reward, out[0][0])
+
+    chex.assert_shape(new_reward, (2,))
+
+    return new_state, new_reward
+
+
 def find_repeated_state(single_move, repeated, reset_subkey, action_subkey):
     state, _ = jax.vmap(env.reset)(jnp.array([reset_subkey]))
     action_subkeys = jax.random.split(action_subkey, env.max_steps)
@@ -146,11 +158,19 @@ def find_repeated_state(single_move, repeated, reset_subkey, action_subkey):
     chex.assert_shape(state.observation, (1, 480))
 
     # play higher repeated bid
-    state, _, _, _ = jax.vmap(env.step, in_axes=(0, None))(state, repeated[1])
+    state, _, _, done = jax.vmap(env.step, in_axes=(0, None))(state, repeated[1])
+
+    reward_loop_f = partial(reward_loop, action_subkeys, single_move)
+    reward = jnp.array([0.0, 0.0])
+
+    chex.assert_shape(reward, (2,))
 
     # play until end of the game
-    state = jax.lax.fori_loop(
-        repeated[0] + 1, env.max_steps, lambda i, carry: single_move(carry, action_subkeys[i])[0], state
+    state, reward = jax.lax.fori_loop(
+        repeated[0] + 1,
+        env.max_steps,
+        lambda i, carry: reward_loop_f(i, carry),
+        (state, reward),
     )
 
     # TODO return reward from loop as it is overwritten by zeros
@@ -162,10 +182,12 @@ def find_repeated_state(single_move, repeated, reset_subkey, action_subkey):
     is_done = is_done[0]
     chex.assert_shape(is_done, ())
 
+    # jax.debug.print("rew {} {} {} {}\n", reward, is_done, repeated[0], state._env_state._bidding_history)
+
     return jax.lax.cond(
         is_done,
-        lambda: (True, state),
-        lambda: (False, state),
+        lambda: (True, state, reward),
+        lambda: (False, state, reward),
     )
 
 
@@ -182,7 +204,7 @@ def skip_loop(single_move, args):
     chex.assert_shape(rewards, [env.max_steps, 1, 2])
     chex.assert_shape(done, [env.max_steps, 1])
 
-    reward = rewards[:, :, 0].sum()
+    orig_reward = rewards[:, :, 0].sum()
     is_done = done.any()
 
     bid_history = state._env_state._bidding_history[-1]
@@ -196,13 +218,15 @@ def skip_loop(single_move, args):
         bid_history, partner_player
     )  # if (-1, -1) then no repeated bid -> we should find another game
 
-    is_found, new_state = jax.lax.cond(
+    reward = jnp.array([0.0, 0.0])
+
+    is_found, new_state, reward = jax.lax.cond(
         jnp.all(jnp.equal(repeated, jnp.array((-1, -1)))),
-        lambda: (False, state),
+        lambda: (False, state, reward),
         lambda: find_repeated_state(single_move, repeated, reset_subkey, action_subkey),
     )
 
-    not_found_return = (False, state, 0.0, rng, state)
+    not_found_return = (False, state, 0.0, rng, state, reward)
 
     chex.assert_shape(state.observation, (1, 480))
     chex.assert_shape(new_state.observation, (1, 480))
@@ -211,7 +235,7 @@ def skip_loop(single_move, args):
         is_done,
         lambda: jax.lax.cond(
             is_found,
-            lambda: (True, new_state, reward, rng, state),
+            lambda: (True, new_state, orig_reward, rng, state, reward),
             lambda: not_found_return,
         ),
         lambda: not_found_return,
@@ -231,20 +255,22 @@ def get_game_with_skipped_bid(single_move, rng):
     loop = partial(skip_loop, single_move)
 
     state, _ = jax.vmap(env.reset)(jnp.array([rng]))
-    result = jax.lax.while_loop(lambda cond: jnp.logical_not(cond[0]), loop, (False, state, 0.0, rng, state))
+    result = jax.lax.while_loop(
+        lambda cond: jnp.logical_not(cond[0]), loop, (False, state, 0.0, rng, state, jnp.array([0.0, 0.0]))
+    )
 
-    new_state, original_reward = result[1], result[2]
+    new_state, original_reward, reward = result[1], result[2], result[5]
     state = result[4]
 
-    jax.debug.print(
-        "new_state:\n{}\norig_reward: {}\nreward: {}\nisdone: {}\nint_rewards: {}\nstate: {}\n\n",
-        new_state._env_state._bidding_history,
-        original_reward,
-        new_state.rewards,
-        new_state.terminated | new_state.truncated,
-        new_state._env_state.rewards,
-        state._env_state.rewards,
-    )
+    # jax.debug.print(
+    #     "new_state:\n{}\norig_reward: {}\nreward: {}\nisdone: {}\nint_rewards: {}\nstate: {}\n\n",
+    #     new_state._env_state._bidding_history,
+    #     original_reward,
+    #     new_state.rewards,
+    #     new_state.terminated | new_state.truncated,
+    #     new_state._env_state.rewards,
+    #     state._env_state.rewards,
+    # )
 
     chex.assert_shape(new_state.observation, (1, 480))
     chex.assert_shape(original_reward, ())
@@ -253,7 +279,7 @@ def get_game_with_skipped_bid(single_move, rng):
 
     # chex.assert_shape(new_state.observation, (480,))
 
-    return new_state, original_reward
+    return new_state, original_reward, reward
 
 
 def evaluate_pvp_winnable(rng: chex.PRNGKey, policy1, policy2, batch_size: int):
@@ -272,16 +298,17 @@ def evaluate_pvp_winnable(rng: chex.PRNGKey, policy1, policy2, batch_size: int):
     get_games = partial(get_game_with_skipped_bid, single_move)
 
     rng, subkey = jax.random.split(rng)
-    state, orig_rewards = jax.vmap(get_games)(jax.random.split(subkey, batch_size))
+    state, orig_rewards, rewards = jax.vmap(get_games)(jax.random.split(subkey, batch_size))
     # first = state
     # state, out = jax.lax.scan(single_move, first, jax.random.split(rng, env.max_steps))
     # state = jnp.squeeze(state, 1)
 
-    rewards = state.rewards
-    chex.assert_shape(rewards, [batch_size, 1, 2])
+    # rewards = state.rewards
+    chex.assert_shape(rewards, [batch_size, 2])
     chex.assert_shape(orig_rewards, [batch_size])
     # chex.assert_shape(done, [env.max_steps, batch_size])
-    net_rewards = rewards[:, :, 0].sum(axis=1)
+    # net_rewards = rewards[:, :, 0].sum(axis=1)
+    net_rewards = rewards[:, 0]
     # episode_done = done.any(axis=0)
     return orig_rewards, net_rewards
 
@@ -302,11 +329,11 @@ if __name__ == "__main__":
             )
         )
 
-        rng = jax.random.key(0)
+        rng = jax.random.key(3)
         game_history_orig = []
         game_history = []
 
-        for _ in tqdm(range(1)):
+        for _ in tqdm(range(32)):
             rng, subkey = jax.random.split(rng)
             orig_results, results = eval_func(subkey)
             for orig_result, result in zip(orig_results, results):
