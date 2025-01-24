@@ -96,6 +96,8 @@ if __name__ == "__main__":
         patch.set_facecolor(color)
     ax.yaxis.grid(True)
 
+    plt.ylabel("Elo rating")
+    plt.xlabel("Player")
     plt.savefig("research_out/calc_elo_boxplot.png")
 
     plt.figure()
@@ -111,4 +113,6 @@ if __name__ == "__main__":
         for i in range(num_players):
             plt.plot(elo_rating[:, i], color=colors[player_names[i]], alpha=0.5)
     plt.legend(player_names)
+    plt.ylabel("Elo rating")
+    plt.xlabel("Number of tournament games")
     plt.savefig("research_out/calc_elo_history.png")

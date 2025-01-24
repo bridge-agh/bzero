@@ -38,11 +38,16 @@ if __name__ == "__main__":
     num_all_games = len(history)
     num_games = num_all_games / min_num_games(num_players)
 
+    table = [[' {} ' for _ in range(num_players)] for _ in range(num_players)]
+
     for i in range(num_players):
         for j in range(num_players):
             if i == j:
                 continue
-            print(f"{player_names[i]} vs {player_names[j]}: {100 * (scores[i][j] / num_games):.2f}%")
+            # print(f"{player_names[i]} vs {player_names[j]}: {100 * (scores[i][j] / num_games):.2f}%")
+            table[i][j] = f"{100 * (scores[i][j] / num_games):.2f}%"
+            
+    print(' \\\\\n'.join([' & '.join(row) for row in table]))
 
 
 

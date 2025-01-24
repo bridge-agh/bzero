@@ -8,3 +8,4 @@ tqdm
 mctx
 rich
 wandb
+pandas
