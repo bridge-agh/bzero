@@ -78,9 +78,20 @@ if __name__ == '__main__':
     })
     df.to_csv('research_out/bzero_elo.csv', index=False)
 
-    plt.figure()
-    plt.boxplot(perm_elo_ratings)
-    plt.xticks(range(1, num_players + 1), player_names, rotation=45)
+    colors = {
+        player: f'C{i}' for i, player in enumerate(player_names)
+    }
+    fig, ax = plt.subplots()
+    bplot = ax.boxplot(
+        perm_elo_ratings,
+        patch_artist=True,
+        labels=[i * 100 for i in range(1, 12)]
+    )
+    for patch, color in zip(bplot["boxes"], [colors[p] for p in player_names]):
+        patch.set_facecolor(color)
+    ax.yaxis.grid(True)
+    plt.ylabel('Elo rating')
+    plt.xlabel('Training iteration')
     plt.savefig('research_out/bzero_elo_boxplot.png')
 
     plt.figure()
