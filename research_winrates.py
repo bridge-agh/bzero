@@ -5,7 +5,8 @@ player_names = [
     "random",
     "mcts-32",
     "mcts-128",
-    "dds",
+    "dds-aggressive",
+    "dds-peaceful",
     "bzero",
 ]
 history_file_name = 'game_history/random-mcts32-mcts128-dds-bzero-v2.pkl'

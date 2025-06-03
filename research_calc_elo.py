@@ -48,12 +48,13 @@ if __name__ == "__main__":
 
     K = 4
 
-    num_players = 5
+    num_players = 6
     player_names = [
         "random",
         "mcts-32",
         "mcts-128",
-        "dds",
+        "dds-aggressive",
+        "dds-peaceful",
         "bzero",
     ]
 
@@ -82,8 +83,9 @@ if __name__ == "__main__":
         "random": "C0",
         "mcts-32": "C1",
         "mcts-128": "C2",
-        "dds": "C3",
-        "bzero": "C4",
+        "dds-aggressive": "C3",
+        "dds-peaceful": "C4",
+        "bzero": "C5",
     }
 
     fig, ax = plt.subplots()
