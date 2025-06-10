@@ -7,7 +7,7 @@ import haiku as hk
 import mctx
 
 from type_aliases import Action, Observation
-from az_network import AlphaZeroNetwork, NetworkVariables, NetworkOutputs, DiscreteActionHead
+from brl_network import BRLNetwork, NetworkVariables, NetworkOutputs
 import bridge_env as env
 
 
@@ -23,9 +23,7 @@ def act_randomly(rng: PRNGKey, state: State) -> Action:
 def forward(observation: Observation, is_training: bool) -> NetworkOutputs:
     chex.assert_shape(observation, [None, *env.observation_shape])
     x = observation.astype(jnp.float32)
-    x = hk.Linear(4 * 4 * 32)(x)
-    x = jnp.reshape(x, [-1, 4, 4, 32])
-    net = AlphaZeroNetwork(action_head=DiscreteActionHead(num_actions=env.num_actions))
+    net = BRLNetwork()
     return net(x, is_training=is_training)
 
 

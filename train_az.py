@@ -15,7 +15,7 @@ import pickle
 
 from type_aliases import Reward, Observation, Done
 import bridge_env as env
-from az_network import NetworkVariables
+from brl_network import NetworkVariables
 import az_agent
 
 
