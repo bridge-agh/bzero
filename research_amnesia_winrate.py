@@ -209,13 +209,22 @@ def skip_loop(single_move, args):
 
     bid_history = state._env_state._bidding_history[-1]
 
-    target_player = jnp.where(state._env_state._shuffled_players[-1] == 0, size=1)[0][0]  # extract from tuple and array
-    chex.assert_shape(target_player, ())
+    target_player_ix = jnp.where(state._env_state._shuffled_players[-1] == 1, size=1)[0][0]
+    dealer_player_ix = jnp.where(state._env_state._shuffled_players[-1] == state._env_state._dealer[0], size=1)[0][0]
 
-    partner_player = jnp.mod(jnp.add(target_player, 2), 4)
+    dealer_shift = jnp.mod(jnp.subtract(target_player_ix, dealer_player_ix), 4)
+
+    # jax.debug.print("[{}] shuffl: {}", rng, state._env_state._shuffled_players)
+    # jax.debug.print("[{}] target_player_ix: {}", rng, target_player_ix)
+    # jax.debug.print("[{}] dealer_player_ix: {}", rng, dealer_player_ix)
+    # jax.debug.print("[{}] dealer_shift: {}", rng, dealer_shift)
+    # jax.debug.print("[{}] dealer: {}", rng, state._env_state._dealer)
+    chex.assert_shape(target_player_ix, ())
+
+    # target_player = jnp.mod(jnp.add(target_player_ix, 2), 4)
 
     repeated = get_repeated_bid(
-        bid_history, partner_player
+        bid_history, dealer_shift
     )  # if (-1, -1) then no repeated bid -> we should find another game
 
     reward = jnp.array([0.0, 0.0])
@@ -261,6 +270,9 @@ def get_game_with_skipped_bid(single_move, rng):
 
     new_state, original_reward, reward = result[1], result[2], result[5]
     state = result[4]
+
+    # jax.debug.print("[{}] state:\n{}", rng, state._env_state._bidding_history)
+    # jax.debug.print("[{}] new state:\n{}", rng, new_state._env_state._bidding_history)
 
     # jax.debug.print(
     #     "new_state:\n{}\norig_reward: {}\nreward: {}\nisdone: {}\nint_rewards: {}\nstate: {}\n\n",
@@ -315,34 +327,39 @@ def evaluate_pvp_winnable(rng: chex.PRNGKey, policy1, policy2, batch_size: int):
 
 if __name__ == "__main__":
     for policy_name, policy in [
-        ("bzero", make_bzero_policy()),
-        # ('random', random_policy),
-        # ('mcts128', make_mcts_policy(128)),
-        # ('mcts512', make_mcts_policy(512)),
+        ("bzero", make_bzero_policy()),  # target policy (one who is measured)
     ]:
         eval_func = jax.jit(
             partial(
                 evaluate_pvp_winnable,
-                policy1=make_bzero_policy(),
+                policy1=make_bzero_policy(),  # opponent policy
                 policy2=policy,
                 batch_size=32,
             )
         )
 
-        rng = jax.random.key(3)
+        rng = jax.random.key(432543)
         game_history_orig = []
         game_history = []
 
-        for _ in tqdm(range(32)):
+        for check_id in tqdm(range(64)):
             rng, subkey = jax.random.split(rng)
             orig_results, results = eval_func(subkey)
             for orig_result, result in zip(orig_results, results):
                 game_history_orig.append(orig_result.astype(jnp.int32).item())
                 game_history.append(result.astype(jnp.int32).item())
 
-        print(game_history_orig)
-        print(game_history)
+            print(f"[Checkpoint {check_id} report]")
+            winrate_orig = jnp.mean(jnp.array(game_history_orig) < 0)
+            winrate = jnp.mean(jnp.array(game_history) < 0)
+            delta = winrate - winrate_orig
+            print(f"{policy_name} | orig_winrate = {winrate_orig} , winrate = {winrate} , final delta = {delta}\n")
 
+        # print(game_history_orig)
+        # print(game_history)
+
+        print(f"[Final report]")
         winrate_orig = jnp.mean(jnp.array(game_history_orig) < 0)
         winrate = jnp.mean(jnp.array(game_history) < 0)
-        print(f"{policy_name} orig_winrate: {winrate_orig} winrate: {winrate}")
+        delta = winrate - winrate_orig
+        print(f"{policy_name} | orig_winrate = {winrate_orig} , winrate = {winrate} , final delta = {delta}")
