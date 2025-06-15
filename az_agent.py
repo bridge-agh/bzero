@@ -7,7 +7,7 @@ import haiku as hk
 import mctx
 
 from type_aliases import Action, Observation
-from brl_network import BRLNetwork, NetworkVariables, NetworkOutputs
+from az_network import NetworkVariables, forward
 import bridge_env as env
 
 
@@ -17,14 +17,6 @@ INITIALIZE_ENVS = 512
 def act_randomly(rng: PRNGKey, state: State) -> Action:
     logits = jnp.log(state.legal_action_mask.astype(jnp.float16))
     return jax.random.categorical(rng, logits)
-
-
-@hk.transform_with_state
-def forward(observation: Observation, is_training: bool) -> NetworkOutputs:
-    chex.assert_shape(observation, [None, *env.observation_shape])
-    x = observation.astype(jnp.float32)
-    net = BRLNetwork()
-    return net(x, is_training=is_training)
 
 
 def initial_variables(rng: PRNGKey) -> NetworkVariables:

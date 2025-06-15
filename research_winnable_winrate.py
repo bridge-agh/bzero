@@ -9,7 +9,7 @@ from pgx.bridge_bidding import BID_OFFSET_NUM, PASS_ACTION_NUM
 
 from bridge_bidding_2p import State
 from dds_common import argmax_reverse
-from run_tournament import make_bzero_policy, make_random_policy, make_mcts_policy
+from run_tournament import make_bzero_policy, make_bzero_xl_policy, make_random_policy, make_mcts_policy, make_brl_policy
 import bridge_env as env
 from type_aliases import Done, Reward
 from dds_peaceful_agent import make_dds_policy as make_dds_peaceful_policy
@@ -118,26 +118,86 @@ def evaluate_pvp_winnable(rng: chex.PRNGKey, policy1, policy2, batch_size: int):
     return net_rewards, episode_done
 
 
+import glob
+
+
 if __name__ == "__main__":
     for policy_name, policy in [
+        # *[
+        #     (f"bzero-{model}", make_bzero_xl_policy(p=model))
+        #     for model in glob.glob("model-*.pkl")
+        # ]
+
+        # *[
+        #     (f"bzero-{model}", make_bzero_policy(p=model))
+        #     for model in glob.glob("bzero-checkpoints/model-*.pkl")
+        # ]
+
+        # 0.5571823
         ("bzero", make_bzero_policy()),
+
+        # 0.6309662
+        ("bzero-xl", make_bzero_xl_policy()),
+
+        # 0.55368805
+        ("brl-from-scratch-rl", make_brl_policy("brl/bridge_models/model-from-scratch-rl.pkl")),
+
+        # 0.6663132
+        ("brl-pretrained-rl-with-fsp", make_brl_policy("brl/bridge_models/model-pretrained-rl-with-fsp.pkl")),
+
+        # 0.6919403
+        ("brl-pretrained-rl-with-pfsp", make_brl_policy("brl/bridge_models/model-pretrained-rl-with-pfsp.pkl")),
+
+        # 0.693161
+        ("brl-pretrained-rl", make_brl_policy("brl/bridge_models/model-pretrained-rl.pkl")),
+
+        # 0.6678467
+        ("brl-sl", make_brl_policy("brl/bridge_models/model-sl.pkl")),
+
+
+
+
+        # 0.51067924 - argmax
+        # 0.5039654 - random
+        # ("bzero", make_bzero_policy()),
+
+        # 0.21313858
+        # 0.46661186
+        # ("new-bzero", make_new_bzero_policy()),
+
+        # 0.69322777
+        # 0.68261147
+        # ("brl-pretrained-rl-with-pfsp", make_brl_policy("brl/bridge_models/model-pretrained-rl-with-pfsp.pkl")),
+
+        # 0.6670723
+        # 0.65826416
+        # ("brl-pretrained-rl-with-fsp", make_brl_policy("brl/bridge_models/model-pretrained-rl-with-fsp.pkl")),
+
+        # 0.6944046
+        # 0.6820278
+        # ("brl-pretrained-rl", make_brl_policy("brl/bridge_models/model-pretrained-rl.pkl")),
+
+        # 0.5551243
+        # 0.54642105
+        # ("brl-from-scratch-rl", make_brl_policy("brl/bridge_models/model-from-scratch-rl.pkl")),
+
         # ('random', random_policy),
         # ('mcts128', make_mcts_policy(128)),
-        # ('mcts512', make_mcts_policy(512)),
+        # ('mcts512', make_mcts_policy(2**12)),
     ]:
         eval_func = jax.jit(
             partial(
                 evaluate_pvp_winnable,
                 policy1=make_dds_aggressive_policy,
                 policy2=policy,
-                batch_size=64,
+                batch_size=4096,
             )
         )
 
         rng = jax.random.key(0)
         game_history = []
 
-        for _ in tqdm(range(16)):
+        for _ in tqdm(range(32)):
             rng, subkey = jax.random.split(rng)
             results, dones = eval_func(subkey)
             for result, done in zip(results, dones):
