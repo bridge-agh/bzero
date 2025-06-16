@@ -48,13 +48,12 @@ if __name__ == "__main__":
 
     K = 4
 
-    num_players = 6
+    num_players = 5
     player_names = [
         "random",
         "mcts-32",
         "mcts-128",
-        "dds-aggressive",
-        "dds-peaceful",
+        "dds",
         "bzero",
     ]
 
@@ -64,9 +63,7 @@ if __name__ == "__main__":
     for _ in tqdm(range(nperm)):
         elo_ratings = np.ones(num_players) * 1000
         for p0, p1, result in rng.permutation(game_history):
-            elo_ratings[p0], elo_ratings[p1] = elo_update(
-                elo_ratings[p0], elo_ratings[p1], result, K
-            )
+            elo_ratings[p0], elo_ratings[p1] = elo_update(elo_ratings[p0], elo_ratings[p1], result, K)
         perm_elo_ratings.append(elo_ratings)
     perm_elo_ratings = np.array(perm_elo_ratings)
 
@@ -83,24 +80,23 @@ if __name__ == "__main__":
         "random": "C0",
         "mcts-32": "C1",
         "mcts-128": "C2",
-        "dds-aggressive": "C3",
-        "dds-peaceful": "C4",
-        "bzero": "C5",
+        "dds": "C3",
+        "bzero": "C4",
     }
 
-    fig, ax = plt.subplots()
-    bplot = ax.boxplot(
-        perm_elo_ratings,
-        patch_artist=True,
-        labels=player_names,
-    )
-    for patch, color in zip(bplot["boxes"], [colors[p] for p in player_names]):
-        patch.set_facecolor(color)
-    ax.yaxis.grid(True)
+    # fig, ax = plt.subplots()
+    # bplot = ax.boxplot(
+    #     perm_elo_ratings,
+    #     patch_artist=True,
+    #     labels=player_names,
+    # )
+    # for patch, color in zip(bplot["boxes"], [colors[p] for p in player_names]):
+    #     patch.set_facecolor(color)
+    # ax.yaxis.grid(True)
 
-    plt.ylabel("Elo rating")
-    plt.xlabel("Player")
-    plt.savefig("research_out/calc_elo_boxplot.png")
+    # plt.ylabel("Elo rating")
+    # plt.xlabel("Player")
+    # plt.savefig("research_out/calc_elo_boxplot.png")
 
     plt.figure()
 
@@ -114,7 +110,14 @@ if __name__ == "__main__":
         elo_rating = np.array(elo_rating)
         for i in range(num_players):
             plt.plot(elo_rating[:, i], color=colors[player_names[i]], alpha=0.5)
+
     plt.legend(player_names)
     plt.ylabel("Elo rating")
     plt.xlabel("Number of tournament games")
-    plt.savefig("research_out/calc_elo_history.png")
+    # plt.savefig("research_out/calc_elo_history.png", bbox_inches='tight')
+
+    plt.legend(player_names)
+
+    # plt.savefig("research_out/calc_elo_history.eps", format="eps", dpi=300)
+    plt.savefig("research_out/calc_elo_history.pdf", dpi=300, bbox_inches="tight")
+    # plt.savefig("research_out/calc_elo_history.png")

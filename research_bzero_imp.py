@@ -42,8 +42,8 @@ def elo_update(elo_a, elo_b, result, k=32):
     return new_a, new_b
 
 
-if __name__ == '__main__':
-    with open('game_history/bzero-checkpoints.pkl', 'rb') as f:
+if __name__ == "__main__":
+    with open("game_history/bzero-checkpoints.pkl", "rb") as f:
         game_history = pickle.load(f)
 
     num_players = 11
@@ -71,33 +71,32 @@ if __name__ == '__main__':
         perm_elo_ratings.append(elo_ratings)
     perm_elo_ratings = np.array(perm_elo_ratings)
 
-    df = pd.DataFrame({
-        "player": player_names,
-        "mean_elo": np.mean(perm_elo_ratings, axis=0),
-        "std_elo": np.std(perm_elo_ratings, axis=0),
-    })
-    df.to_csv('research_out/bzero_elo.csv', index=False)
-
-    colors = {
-        player: f'C{i}' for i, player in enumerate(player_names)
-    }
-    fig, ax = plt.subplots()
-    bplot = ax.boxplot(
-        perm_elo_ratings,
-        patch_artist=True,
-        labels=[i * 100 for i in range(1, 12)]
+    df = pd.DataFrame(
+        {
+            "player": player_names,
+            "mean_elo": np.mean(perm_elo_ratings, axis=0),
+            "std_elo": np.std(perm_elo_ratings, axis=0),
+        }
     )
+    df.to_csv("research_out/bzero_elo.csv", index=False)
+
+    colors = {player: f"C{i}" for i, player in enumerate(player_names)}
+    fig, ax = plt.subplots()
+    bplot = ax.boxplot(perm_elo_ratings, patch_artist=True, labels=[i * 100 for i in range(1, 12)])
     for patch, color in zip(bplot["boxes"], [colors[p] for p in player_names]):
         patch.set_facecolor(color)
     ax.yaxis.grid(True)
-    plt.ylabel('Elo rating')
-    plt.xlabel('Training iteration')
-    plt.savefig('research_out/bzero_elo_boxplot.png')
+    plt.ylabel("Elo rating")
+    plt.xlabel("Training iteration")
+    # plt.savefig("research_out/bzero_elo_boxplot.png")
+
+    # plt.figure()
+    # plt.boxplot(perm_elo_ratings)
+    # plt.xticks(range(1, num_players + 1), player_names, rotation=45)
+    plt.savefig("research_out/bzero_elo_boxplot.pdf", dpi=300, bbox_inches="tight")
 
     plt.figure()
-    colors = {
-        player: f'C{i}' for i, player in enumerate(player_names)
-    }
+    colors = {player: f"C{i}" for i, player in enumerate(player_names)}
     rng = np.random.default_rng(0)
     for _ in range(3):
         elo_rating = [np.ones(num_players) * 1000]
@@ -109,4 +108,4 @@ if __name__ == '__main__':
         for i in range(num_players):
             plt.plot(elo_rating[:, i], color=colors[player_names[i]], alpha=0.5)
     plt.legend(player_names)
-    plt.savefig('research_out/bzero_elo_history.png')
+    plt.savefig("research_out/bzero_elo_history.pdf", dpi=300, bbox_inches="tight")
