@@ -1,0 +1,22 @@
+[project]
+name = "bzero"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = "~=3.12"
+dependencies = [
+    "chex>=0.1.89",
+    "dm-haiku>=0.0.14",
+    "ipykernel>=6.29.5",
+    "ipywidgets>=8.1.7",
+    "matplotlib>=3.10.3",
+    "mctx>=0.0.5",
+    "omegaconf>=2.3.0",
+    "optax>=0.2.5",
+    "pandas>=2.3.0",
+    "pgx>=2.6.0",
+    "pydantic>=2.11.5",
+    "rich>=14.0.0",
+    "tqdm>=4.67.1",
+    "wandb>=0.20.1",
+]

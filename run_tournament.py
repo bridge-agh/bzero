@@ -17,7 +17,8 @@ from pgx.bridge_bidding import BID_OFFSET_NUM, PASS_ACTION_NUM
 from type_aliases import Observation, Reward, Done, Action
 import bridge_env as env
 import mcts_agent
-import az_agent
+import az_network
+import brl_network
 from dds_aggressive_agent import make_dds_policy as make_dds_aggressive_policy
 from dds_peaceful_agent import make_dds_policy as make_dds_peaceful_policy
 
@@ -63,20 +64,64 @@ def make_mcts_policy(num_simulations: int):
     return mcts_policy
 
 
-def make_bzero_policy(p="models/bridge_v1.pkl") -> chex.Array:
+def make_bzero_policy(p="models/bridge_v2.pkl", stochastic=False) -> chex.Array:
     with open(p, "rb") as f:
         variables = pickle.load(f)
 
     def bzero_policy(rng: PRNGKey, state: State) -> chex.Array:
-        outputs, _ = az_agent.forward.apply(
-            variables.params, variables.state, rng, state.observation, is_training=False
+        rng1, rng2 = jax.random.split(rng)
+        outputs, _ = az_network.forward.apply(
+            variables.params, variables.state, rng1, state.observation, is_training=False
         )
         logits = outputs.pi
         action_mask = state.legal_action_mask
         logits_masked = jnp.where(action_mask, logits, -1e9)
-        return logits_masked.argmax(axis=-1)
+        if stochastic:
+            return jax.random.categorical(rng2, logits_masked)
+        else:
+            return logits_masked.argmax(axis=-1)
 
     return bzero_policy
+
+
+def make_bzero_xl_policy(p="models/bzero_xl_v1.pkl", stochastic=False) -> chex.Array:
+    with open(p, "rb") as f:
+        variables = pickle.load(f)
+
+    def bzero_policy(rng: PRNGKey, state: State) -> chex.Array:
+        rng1, rng2 = jax.random.split(rng)
+        outputs, _ = brl_network.forward.apply(
+            variables.params, variables.state, rng1, state.observation, is_training=False
+        )
+        logits = outputs.pi
+        action_mask = state.legal_action_mask
+        logits_masked = jnp.where(action_mask, logits, -1e9)
+        if stochastic:
+            return jax.random.categorical(rng2, logits_masked)
+        else:
+            return logits_masked.argmax(axis=-1)
+
+    return bzero_policy
+
+
+def make_brl_policy(p, stochastic=False):
+    from brl.src.models import make_forward_pass
+
+    brl_model = make_forward_pass('relu', 'DeepMind')
+
+    with open(p, "rb") as f:
+        params = pickle.load(f)
+
+    def brl_policy(rng, state):
+        logits, _ = brl_model.apply(params, state.observation)
+        action_mask = state.legal_action_mask
+        logits_masked = jnp.where(action_mask, logits, -1e9)
+        if stochastic:
+            return jax.random.categorical(rng, logits_masked)
+        else:
+            return logits_masked.argmax(axis=-1)
+
+    return brl_policy
 
 
 def expected(A, B):
@@ -130,28 +175,30 @@ def compute_elo_ratings(player_names, history):
 
 def main():
     player_names = [
-        "random",
-        "mcts-32",
-        "mcts-64",
-        "dds-aggressive",
-        "dds-peaceful",
         "bzero",
+        "bzero-xl",
+        "brl-from-scratch-rl",
+        "brl-pretrained-rl-with-fsp",
+        "brl-pretrained-rl-with-pfsp",
+        "brl-pretrained-rl",
+        "brl-sl",
     ]
 
     num_players = len(player_names)
 
     policies = [
-        make_random_policy,
-        make_mcts_policy(32),
-        make_mcts_policy(64),
-        make_dds_aggressive_policy,
-        make_dds_peaceful_policy,
         make_bzero_policy(),
+        make_bzero_xl_policy(),
+        make_brl_policy("brl/bridge_models/model-from-scratch-rl.pkl"),
+        make_brl_policy("brl/bridge_models/model-pretrained-rl-with-fsp.pkl"),
+        make_brl_policy("brl/bridge_models/model-pretrained-rl-with-pfsp.pkl"),
+        make_brl_policy("brl/bridge_models/model-pretrained-rl.pkl"),
+        make_brl_policy("brl/bridge_models/model-sl.pkl"),
     ]
 
     eval_funcs = [
         [
-            jax.jit(partial(evaluate_pvp, policy1=policies[p0], policy2=policies[p1], batch_size=64))
+            jax.jit(partial(evaluate_pvp, policy1=policies[p0], policy2=policies[p1], batch_size=4096))
             for p1 in range(num_players)
         ]
         for p0 in range(num_players)
@@ -161,10 +208,10 @@ def main():
 
     rng = jax.random.key(0)
 
-    wandb.init(project="bridge-elo")
+    wandb.init(project="bridge-brl")
 
     try:
-        while True:
+        for _ in range(32):
             for p0 in range(num_players - 1):
                 for p1 in range(p0 + 1, num_players):
                     rng, subkey = jax.random.split(rng)

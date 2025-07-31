@@ -1,6 +1,10 @@
 import jax
+import jax.numpy as jnp
 import chex
 import haiku as hk
+
+import bridge_env as env
+from type_aliases import Observation
 
 
 class ConvolutionalBlock(hk.Module):
@@ -109,3 +113,13 @@ class AlphaZeroNetwork(hk.Module):
         pi = PolicyHead(action_head=self.action_head, bn_config=self.bn_config)(x, is_training)
         v = ValueHead(bn_config=self.bn_config)(x, is_training)
         return NetworkOutputs(pi=pi, v=v)
+
+
+@hk.transform_with_state
+def forward(observation: Observation, is_training: bool) -> NetworkOutputs:
+    chex.assert_shape(observation, [None, *env.observation_shape])
+    x = observation.astype(jnp.float32)
+    x = hk.Linear(4 * 4 * 32)(x)
+    x = jnp.reshape(x, [-1, 4, 4, 32])
+    net = AlphaZeroNetwork(action_head=DiscreteActionHead(num_actions=env.num_actions))
+    return net(x, is_training=is_training)
